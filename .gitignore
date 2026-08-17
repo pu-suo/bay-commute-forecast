@@ -1,0 +1,26 @@
+# Environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Secrets — credentials live in ~/.pems_env, never in the repo
+.env
+.env.*
+!.env.example
+*.pem
+
+# Collected data lives outside the repo (~/traffic-data).
+# Nothing here is committed by accident; see README for the layout.
+data/
+*.txt.gz
+*.json.gz
+
+# Large derived artifacts
+*.parquet
+!site/data/*.parquet
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

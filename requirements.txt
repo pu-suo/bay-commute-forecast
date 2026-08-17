@@ -1,0 +1,7 @@
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14.0
+requests>=2.31
+holidays>=0.40
+# model training (not yet wired in)
+lightgbm>=4.0
