@@ -47,39 +47,61 @@ def _date_of(path):
 
 def build_seasonal(data_dir, train_end=TRAIN_END, min_pct_observed=20):
     """
-    Streaming median/sd per (station, weekday, time-of-day) over the train span.
+    Streaming mean/sd per (station, weekday, time-of-day) over the train span.
 
-    Exact medians would need every value held in memory, so this accumulates
-    sums and sums-of-squares for the mean and sd, and takes the mean as the
-    central estimate. On 5-minute speed data the two are close, and the model
-    receives the sd separately so it can learn where they diverge.
+    Accumulated into dense numpy arrays rather than by adding pandas Series.
+    The key space is bounded -- 2,291 stations x 7 weekdays x 288 intervals, so
+    ~4.6M cells, about 110 MB across the three accumulators -- while aligning
+    660k-entry Series 1,461 times is quadratic-ish in practice and does not
+    finish. np.add.at on flat indices is O(rows) per day.
+
+    Exact medians would need every value retained, so this keeps sums and
+    sums-of-squares and reports the mean. On 5-minute speeds the two are close,
+    and the sd is passed to the model separately so it can learn where they
+    diverge.
     """
-    acc = {}
     paths = [p for p in _day_paths(data_dir) if _date_of(p) < pd.Timestamp(train_end)]
     logger.info("seasonal table from %d training days", len(paths))
-    for i, p in enumerate(paths, 1):
-        d = pd.read_parquet(p, columns=["station", "tod", "speed", "pct_observed"])
-        d = d[d["pct_observed"] >= min_pct_observed]
+
+    # station id -> dense index, discovered from the newest training day
+    probe = pd.read_parquet(paths[-1], columns=["station"])
+    stations = np.sort(probe["station"].unique())
+    sidx = pd.Series(np.arange(len(stations)), index=stations)
+    n_st, n_tod = len(stations), 288
+
+    shape = (n_st, 7, n_tod)
+    cnt = np.zeros(shape, dtype=np.int32)
+    ssum = np.zeros(shape, dtype=np.float64)
+    sqsum = np.zeros(shape, dtype=np.float64)
+
+    for i, path in enumerate(paths, 1):
+        d = pd.read_parquet(path, columns=["station", "tod", "speed", "pct_observed"])
+        d = d[(d["pct_observed"] >= min_pct_observed) & d["station"].isin(sidx.index)]
         if d.empty:
             continue
-        d["dow"] = _date_of(p).dayofweek
-        g = d.groupby(["station", "dow", "tod"], sort=False)["speed"]
-        part = pd.DataFrame({"n": g.size(), "s": g.sum(),
-                             "ss": g.apply(lambda x: float((x.astype("float64") ** 2).sum()))})
-        for col in ("n", "s", "ss"):
-            if col not in acc:
-                acc[col] = part[col]
-            else:
-                acc[col] = acc[col].add(part[col], fill_value=0.0)
+        si = sidx.reindex(d["station"]).to_numpy()
+        ti = (d["tod"].to_numpy() // 5).astype(np.int64)
+        dow = _date_of(path).dayofweek
+        flat = (si * 7 + dow) * n_tod + ti
+        sp = d["speed"].to_numpy(dtype=np.float64)
+        np.add.at(cnt.reshape(-1), flat, 1)
+        np.add.at(ssum.reshape(-1), flat, sp)
+        np.add.at(sqsum.reshape(-1), flat, sp * sp)
         if i % 250 == 0:
             logger.info("  %d/%d days", i, len(paths))
 
-    out = pd.DataFrame(acc).reset_index()
-    out = out[out["n"] >= MIN_OBS_FOR_SEASONAL]
-    out["seasonal_speed"] = out["s"] / out["n"]
-    var = (out["ss"] / out["n"]) - out["seasonal_speed"] ** 2
-    out["seasonal_sd"] = np.sqrt(var.clip(lower=0))
-    out = out[["station", "dow", "tod", "seasonal_speed", "seasonal_sd"]]
+    keep = cnt >= MIN_OBS_FOR_SEASONAL
+    st_i, dw_i, td_i = np.nonzero(keep)
+    n = cnt[keep].astype(np.float64)
+    mean = ssum[keep] / n
+    var = (sqsum[keep] / n) - mean ** 2
+    out = pd.DataFrame({
+        "station": stations[st_i].astype(np.int32),
+        "dow": dw_i.astype(np.int8),
+        "tod": (td_i * 5).astype(np.int16),
+        "seasonal_speed": mean.astype(np.float32),
+        "seasonal_sd": np.sqrt(np.clip(var, 0, None)).astype(np.float32),
+    })
     logger.info("seasonal table: %d (station,dow,tod) cells", len(out))
     return out
 
