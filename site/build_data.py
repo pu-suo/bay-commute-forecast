@@ -6,18 +6,18 @@ The site is static by construction. A day-ahead forecast is fully knowable the
 night before, so there is no query a server needs to answer at page load, and
 the whole map is a file:
 
-  network.json    freeway geometry plus an hourly speed series per station
+  network.json    an hourly speed series per detector, plus its free-flow speed
   corridors.json  the nine named commutes, minute-by-minute across the week
+
+Road geometry is NOT here -- it comes from `build_geometry.py`, which reads real
+OSM centrelines. The two are keyed to each other by detector id, so geometry is
+rebuilt only when the road network changes while speeds are rebuilt nightly.
 
 Hourly, not five-minute. The serving table holds 15-minute resolution and the
 route planner uses all of it, but a map that animates across a week needs 168
 frames rather than 672, and the difference is a megabyte the visitor waits on
 for no visual gain. Resolution is a rendering decision here, not a modelling one.
 
-Geometry is synthesised from station positions: consecutive detectors on the
-same freeway and direction, ordered by postmile, joined into a chain. It is not
-the true road centreline, but at a metro-wide zoom it is indistinguishable, and
-it costs nothing -- no shapefile to fetch, license, or keep current.
 """
 import argparse
 import json
@@ -29,27 +29,6 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger("build_data")
-
-MAX_LINK_MI = 5.0        # beyond this, consecutive detectors are not one road
-
-
-def network_geometry(meta):
-    """Chain consecutive same-freeway, same-direction stations into segments."""
-    segs = []
-    for (fwy, direction), grp in meta.groupby(["Fwy", "Dir"], sort=False):
-        g = grp.sort_values("Abs_PM")
-        lat = g["Latitude"].to_numpy()
-        lon = g["Longitude"].to_numpy()
-        ids = g["sensor_id"].astype(int).to_numpy()
-        d = np.hypot(np.diff(lat) * 69.0, np.diff(lon) * 54.6)
-        for i in range(len(g) - 1):
-            if d[i] > MAX_LINK_MI:
-                continue
-            segs.append({"id": int(ids[i]), "fwy": int(fwy), "dir": direction,
-                         "a": [round(float(lat[i]), 5), round(float(lon[i]), 5)],
-                         "b": [round(float(lat[i + 1]), 5), round(float(lon[i + 1]), 5)]})
-    return segs
-
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
@@ -78,9 +57,7 @@ def main(argv=None):
     slot_index = {t: i for i, t in enumerate(slots)}
     logger.info("%d hourly slots, %s -> %s", len(slots), slots[0], slots[-1])
 
-    segs = network_geometry(meta)
-    wanted = {s["id"] for s in segs}
-    h = hourly[hourly["station"].isin(wanted)]
+    h = hourly
 
     # dense (station, slot) speed matrix, so the browser gets a flat array per
     # station rather than 400k little objects to parse
@@ -94,7 +71,6 @@ def main(argv=None):
     freeflow = ff.set_index("station")["freeflow"].to_dict()
     network = {
         "slots": [pd.Timestamp(t).isoformat() for t in slots],
-        "segments": [s for s in segs if s["id"] in sidx],
         "speeds": {str(int(s)): grid[sidx[int(s)]].tolist() for s in stations},
         "freeflow": {str(int(s)): round(float(freeflow.get(int(s), 65.0)), 1)
                      for s in stations},
@@ -103,8 +79,8 @@ def main(argv=None):
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "network.json"), "w") as f:
         json.dump(network, f, separators=(",", ":"))
-    logger.info("network.json: %d segments, %.1f MB", len(network["segments"]),
-                os.path.getsize(os.path.join(out, "network.json")) / 1e6)
+    logger.info("network.json: %d detectors x %d slots, %.1f MB", len(stations),
+                len(slots), os.path.getsize(os.path.join(out, "network.json")) / 1e6)
 
     # ---- the nine named commutes, as a week of travel times -----------------
     speed = fc.set_index(["station", "ts"])["mph"]

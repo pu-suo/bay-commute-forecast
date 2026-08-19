@@ -16,9 +16,10 @@ Forecasts are in **minutes**, because minutes are the unit people think in.
 
 ## What it does
 
-- **Route anything.** Origin and destination anywhere in the Bay Area. OSRM finds
-  the path, the path is matched onto the 2,291 PeMS detectors it actually
-  traverses, and each stretch is priced from that detector's forecast.
+- **Route anything.** Search for a place by name — "Oracle Park", "1 Hacker Way"
+  — or click the map. OSRM finds the path, the path is matched onto the 2,291
+  PeMS detectors it actually traverses, and each stretch is priced from that
+  detector's forecast.
 - **Advance the clock.** A segment forty minutes into a trip is priced at the
   forecast for the time you reach it, not the time you left.
 - **Leave at / arrive by.** Arrive-by is solved by search, not subtraction:
@@ -26,6 +27,9 @@ Forecasts are in **minutes**, because minutes are the unit people think in.
   45.
 - **A week at a glance.** Seven days × 24 hours per corridor, in the shape of a
   weather report.
+- **Show the inference, don't hide it.** Side streets with no detector are drawn
+  as thin lines coloured by the spread model, and can be switched off — so what
+  the inference contributes is visible rather than asserted.
 - **Say what is measured and what is guessed.** Freeway time is a forecast and is
   scored. Surface-street time is an estimate from a spread model with no ground
   truth; it is labelled everywhere it appears and excluded from every accuracy
@@ -96,6 +100,53 @@ Two profiles are maintained deliberately:
 
 Keeping them separate is what stops a nightly refit from silently invalidating a
 published accuracy number.
+
+### The map draws two kinds of claim, and never lets them look alike
+
+Road geometry comes from the OSM extract, not from the detectors. The first
+version drew straight lines between consecutive detectors, which arrived as
+chains of chords across every curve and simply stopped wherever a detector had
+no forecast — holes in the middle of I-880. A forecast that looks broken reads
+as a forecast that *is* broken.
+
+| | drawn as | coloured by | scored? |
+|---|---|---|---|
+| freeway with a detector | thick, opaque | that detector's forecast | yes |
+| freeway with none within 4 mi | thin, grey | nothing | — |
+| side street | thin, translucent, switchable | the spread model | **no** |
+
+10,131 freeway chunks of ~0.4 mi, 87% of them with a detector, plus 49,389
+primary and secondary roads. Speeds are not baked into the geometry: the browser
+already holds a speed series per detector, so a chunk ships one detector id
+instead of 168 numbers and the week scrubber stays instant.
+
+The map stops where the data does. The OSM extract reaches into the Central
+Valley, where district 4 has no detectors at all — I-5 and CA-99 alone were a
+fifth of every chunk and not one could ever be coloured. Drawing them would be
+drawing the edge of the extract as if it were the edge of the map.
+
+### "Direction of travel" is not the direction on the shield
+
+Matching a route to detectors tests heading as well as proximity, to avoid
+matching the opposing carriageway. The first version compared against the
+compass reading of the signed direction — and Caltrans signs I-580 east/west
+while it runs north/south through Oakland, and I-80 east while it runs almost
+due north at Vallejo.
+
+Measured across the network, **19.4% of detectors sit more than 70° from their
+signed direction**, worst on exactly the freeways a Bay Area commute uses. Each
+detector's bearing is now taken from its neighbours along its own freeway,
+flipped for southbound and westbound because postmiles count the other way:
+
+| route | detectors matched, signed | using true bearing |
+|---|---:|---:|
+| I-80, Berkeley → Vallejo | 28 | **52** |
+| US-101, Palo Alto → SFO | 31 | **39** |
+| I-580, Livermore → Oakland | 46 | **50** |
+| I-880, San Jose → Oakland | 77 | 76 |
+
+Those were journeys being handed to the surface estimator because the detector
+standing on the road was rejected for pointing the wrong way.
 
 ### A route is spans, and spans are priced by their evidence
 
@@ -247,6 +298,7 @@ window was scored once, afterwards. B's metrics are kept in
 | Traffic speed | Caltrans PeMS `station_5min`, district 4 | account | 2010→yesterday | — |
 | Detector metadata | PeMS `meta` | account | snapshots | — |
 | Road geometry / routing | OpenStreetMap → self-hosted OSRM | none | — | — |
+| Place search | Google Places, or Photon without a key | optional | — | — |
 | Weather (training) | Open-Meteo **Historical Forecast** | none | 2022→ | — |
 | Weather (serving) | Open-Meteo Forecast | none | — | 16 days |
 | Events | 7 venue calendars + Wayback | none | 2021→ | live |
@@ -273,6 +325,15 @@ spans Gilroy to Ukiah — 130 miles — so nearest-point assignment would have h
 a Santa Rosa detector the weather in Oakland. A 0.25° grid over the bounding box
 has 90 cells; only **30 contain a detector**, so covering the whole network
 properly costs a third of what its extent suggests.
+
+**Place search degrades rather than breaks.** Google Places is the better
+geocoder and needs a billed key, so the provider is a choice: set
+`GOOGLE_MAPS_API_KEY` and it is used, leave it unset and Photon (OSM) answers
+instead. Either way the call is proxied server-side — a browser-side Places call
+puts the key in page source where anyone can lift it, and referrer restrictions
+do not survive someone copying the page. A keyed setup still falls back to
+Photon on a quota error, because a billing lapse should degrade the page, not
+break it.
 
 **Venue calendars over an events vendor.** One venue page lists every event type
 at that venue — the SAP Center calendar carries "Sharks vs. Bruins", "Bellator"
@@ -391,6 +452,11 @@ mysteriously moved no traffic.
 re-ingesting yesterday's cleaned file, compounding its dedupe every run. Derived
 filenames are now skipped by name rather than by trusting the caller's glob.
 
+**A heading test against the signed direction rejects a fifth of all detectors.**
+Freeway direction letters describe the route, not the compass. Covered above; it
+was silently pushing correct freeway miles into the surface estimator, where
+they produced a plausible number instead of an error.
+
 **`groupby.apply(lambda)` over 660k groups is 880× slower than an aggregated
 column**, and accumulating the result across 1,461 days as pandas Series never
 finished at all. Dense numpy accumulation over the bounded key space took the
@@ -426,8 +492,10 @@ forecast/
   surface.py            the spread model for local streets
   route.py              origin/destination → minutes
 site/
-  build_data.py         forecast table → the two JSON files the browser reads
-  server.py             stdlib server for /api/route and /api/profile
+  build_data.py         forecast table → per-detector speed series + corridors
+  build_geometry.py     OSM extract → real road centrelines keyed to detectors
+  site_geocode.py       place search: Google Places when keyed, Photon when not
+  server.py             stdlib server for /api/route, /api/profile, /api/geocode
   index.html app.js     map, week grid, route planner
   accuracy.html         the scores, from the same JSON the model wrote
 scripts/nightly.sh      one full run, invoked by launchd at 03:20
@@ -446,6 +514,7 @@ Files, no database. ~1.5 GB, nearly all of it the detector archive.
 | Events | JSONL | 1.1 MB |
 | Roadwork | gzipped JSON per day | 200 KB |
 | Serving forecast | Parquet | 12 MB |
+| Road geometry (site) | JSON | 7.8 MB, 1.6 MB gzipped |
 
 Postgres would be overhead: append-only daily writes, one reader. DuckDB reads
 the same files if it ever outgrows pandas.
@@ -478,7 +547,11 @@ make seasonal      # both profiles, ~40 s each
 make train         # LightGBM on 9.5M detector readings, ~2 min on CPU
 make validate      # score it in minutes on the nine corridors
 make serve-data    # predict the horizon, rebuild the site JSON
+make geometry      # road centrelines from the OSM extract (5 s)
 make site          # http://localhost:8000
+
+# optional: better place search
+export GOOGLE_MAPS_API_KEY='...'   # falls back to Photon (no key) when unset
 ```
 
 Nightly, under `launchd` (not `cron` — cron skips jobs while the machine sleeps

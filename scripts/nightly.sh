@@ -57,4 +57,11 @@ $PY -m forecast.predict_network --days 7 --out "$DATA/serve"
 echo "--- rebuild site data"
 $PY site/build_data.py --serve "$DATA/serve" --out "$REPO/site/data"
 
+# Five seconds, so there is no reason to schedule it separately. It has to run
+# after the forecast: which stretches of road are drawn as live depends on which
+# detectors reported into tonight's table.
+echo "--- rebuild road geometry"
+$PY site/build_geometry.py --osm "$DATA/osm/bayarea.osm.pbf" \
+    --serve "$DATA/serve" --out "$REPO/site/data"
+
 echo "=== $(date -u +%FT%TZ) nightly ok ==="

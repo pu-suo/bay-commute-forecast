@@ -8,7 +8,7 @@ PY   ?= /Users/Tom/miniforge3/bin/python
 DATA ?= $(HOME)/traffic-data
 OSM  ?= $(DATA)/osm
 
-.PHONY: help osrm seasonal train validate serve-data site nightly clean-osrm
+.PHONY: help osrm seasonal train validate geometry serve-data site nightly clean-osrm
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -35,6 +35,9 @@ train: ## train the network model (CPU, ~25 min)
 
 validate: ## score the model in minutes on the nine corridors
 	$(PY) -m forecast.validate_routes --model models/network/model.txt
+
+geometry: ## rebuild road geometry from the OSM extract (only when roads change)
+	$(PY) site/build_geometry.py --osm $(OSM)/bayarea.osm.pbf --out site/data
 
 serve-data: ## predict the horizon and rebuild the site's JSON
 	$(PY) -m forecast.predict_network --days 7 --out $(DATA)/serve

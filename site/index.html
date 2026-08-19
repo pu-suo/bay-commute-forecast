@@ -15,9 +15,14 @@
       <div class="row">
         <time id="slotLabel">—</time>
         <div class="legend" id="legend"></div>
-        <span class="hint">drag to move through the week</span>
+        <button id="surfaceToggle" class="toggle" aria-pressed="true">
+          <i></i>Inferred side streets</button>
       </div>
       <input type="range" id="slot" min="0" max="167" value="8" step="1">
+      <div class="row foot">
+        <span class="hint">drag to move through the week</span>
+        <span class="hint" id="coverNote"></span>
+      </div>
     </div>
   </div>
 
@@ -30,9 +35,17 @@
     <section>
       <h2>Plan a drive</h2>
       <div class="field"><span class="pin a">A</span>
-        <input id="from" placeholder="click the map, or lat,lon" value="37.4419,-122.1430"></div>
+        <div class="search">
+          <input id="from" autocomplete="off" spellcheck="false"
+                 placeholder="Start — search a place, or click the map">
+          <ul class="suggest" id="fromList" hidden></ul>
+        </div></div>
       <div class="field"><span class="pin b">B</span>
-        <input id="to" placeholder="click the map, or lat,lon" value="37.6213,-122.3790"></div>
+        <div class="search">
+          <input id="to" autocomplete="off" spellcheck="false"
+                 placeholder="Destination — search a place, or click the map">
+          <ul class="suggest" id="toList" hidden></ul>
+        </div></div>
       <div class="modes">
         <button id="mLeave" aria-pressed="true">Leave at</button>
         <button id="mArrive" aria-pressed="false">Arrive by</button>

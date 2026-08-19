@@ -11,12 +11,16 @@ spans. Two endpoints, standard library only.
   GET /api/route?from=lat,lon&to=lat,lon&depart=ISO
   GET /api/route?from=...&to=...&arrive=ISO      solves for departure time
   GET /api/profile?from=...&to=...&date=YYYY-MM-DD   travel time all day
+  GET /api/geocode?q=<text>                      address -> lat,lon
 
-Everything else is served from site/ as files.
+Everything else is served from site/ as files, gzipped -- the road geometry is
+6 MB of JSON that compresses to 1.3, and shipping it raw over any real network
+would undo the point of precomputing it.
 
     python site/server.py --port 8000
 """
 import argparse
+import gzip
 import json
 import logging
 import os
@@ -26,8 +30,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))
+sys.path.insert(0, _HERE)     # so the geocoder resolves however this is invoked
 from forecast.route import Forecast, plan     # noqa: E402
+from site_geocode import geocode              # noqa: E402
 
 logger = logging.getLogger("server")
 STATE = {}
@@ -120,12 +127,21 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         logger.info("%s", fmt % args)
 
+    GZIP_MIN = 4096
+
     def _send(self, code, body, ctype="application/json"):
         payload = body if isinstance(body, bytes) else json.dumps(body).encode()
+        headers = {}
+        accepts = self.headers.get("Accept-Encoding", "")
+        if len(payload) >= self.GZIP_MIN and "gzip" in accepts:
+            payload = gzip.compress(payload, 6)
+            headers["Content-Encoding"] = "gzip"
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in headers.items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(payload)
 
@@ -147,6 +163,12 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/profile":
                 origin, dest = _point(q["from"][0]), _point(q["to"][0])
                 return self._send(200, {"profile": profile(origin, dest, q["date"][0])})
+
+            if parsed.path == "/api/geocode":
+                q = q.get("q", [""])[0].strip()
+                if len(q) < 3:
+                    return self._send(200, {"results": []})
+                return self._send(200, {"results": geocode(q)})
 
             if parsed.path == "/api/horizon":
                 fc = current_forecast()

@@ -15,6 +15,14 @@ So matching is two tests, not one:
   heading     the route's local bearing agrees with the station's direction
               of travel to within MAX_BEARING_DIFF degrees.
 
+"Direction of travel" is NOT the signed direction. Caltrans signs I-580 as
+east/west and it runs north/south through Oakland; I-80 is signed east and runs
+almost due north at Vallejo. Comparing a route's bearing against the compass
+reading of the letter on the shield rejects a correct match on 19.4% of
+detectors -- worst on exactly the freeways a Bay Area commute uses. The bearing
+is therefore derived from each detector's neighbours along its own freeway,
+which is the direction traffic actually moves there.
+
 Stations are then ordered by distance along the route, which is what makes
 time-dependent traversal possible: `forecast.route` accumulates each segment's
 travel time and advances the clock as it goes, so a long trip is evaluated
@@ -31,6 +39,9 @@ logger = logging.getLogger("matching")
 TOLERANCE_MI = 0.10          # ~530 ft
 MAX_BEARING_DIFF = 65.0      # degrees
 DIR_BEARING = {"N": 0.0, "E": 90.0, "S": 180.0, "W": 270.0}
+# Postmiles increase northbound and eastbound, so travel runs with increasing
+# postmile on N/E and against it on S/W.
+_REVERSED = ("S", "W")
 
 
 def _bearing(lat1, lon1, lat2, lon2):
@@ -45,6 +56,35 @@ def _bearing(lat1, lon1, lat2, lon2):
 def _angular_diff(a, b):
     d = np.abs(a - b) % 360.0
     return np.minimum(d, 360.0 - d)
+
+
+def station_bearings(stations):
+    """
+    True direction of travel at each detector, in degrees clockwise from north.
+
+    Taken from the neighbouring detectors on the same freeway and direction,
+    ordered by absolute postmile, and flipped for southbound and westbound so it
+    points the way traffic goes rather than the way postmiles count.
+
+    Falls back to the signed direction only where a detector has no neighbour to
+    take a bearing from.
+    """
+    out = pd.Series(stations["Dir"].map(DIR_BEARING).to_numpy(dtype=float),
+                    index=stations.index)
+    if "Abs_PM" not in stations.columns:
+        return out
+    for (_, direction), grp in stations.groupby(["Fwy", "Dir"], sort=False):
+        g = grp.dropna(subset=["Abs_PM", "Latitude", "Longitude"]).sort_values("Abs_PM")
+        if len(g) < 2:
+            continue
+        lat, lon = g["Latitude"].to_numpy(), g["Longitude"].to_numpy()
+        prev_lat, prev_lon = np.r_[lat[0], lat[:-1]], np.r_[lon[0], lon[:-1]]
+        next_lat, next_lon = np.r_[lat[1:], lat[-1]], np.r_[lon[1:], lon[-1]]
+        b = _bearing(prev_lat, prev_lon, next_lat, next_lon)
+        if direction in _REVERSED:
+            b = (b + 180.0) % 360.0
+        out.loc[g.index] = b
+    return out
 
 
 def match_route(coords, stations, tolerance_mi=TOLERANCE_MI,
@@ -89,7 +129,7 @@ def match_route(coords, stations, tolerance_mi=TOLERANCE_MI,
         best_i[upd] = a + j[upd]
 
     near = best_d <= tolerance_mi
-    station_brg = stations["Dir"].map(DIR_BEARING).to_numpy(dtype=float)
+    station_brg = station_bearings(stations).to_numpy(dtype=float)
     aligned = _angular_diff(brg[best_i], station_brg) <= max_bearing_diff
     keep = near & aligned & np.isfinite(station_brg)
 
