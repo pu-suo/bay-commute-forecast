@@ -16,9 +16,10 @@ So matching is two tests, not one:
               of travel to within MAX_BEARING_DIFF degrees.
 
 Stations are then ordered by distance along the route, which is what makes
-time-dependent traversal possible: you accumulate each segment's travel time and
-advance the clock as you go, so a long trip is evaluated against the forecast
-for the time you will actually *be* there rather than the time you left.
+time-dependent traversal possible: `forecast.route` accumulates each segment's
+travel time and advances the clock as it goes, so a long trip is evaluated
+against the forecast for the time the driver will actually *be* there rather
+than the time they left.
 """
 import logging
 
@@ -47,18 +48,25 @@ def _angular_diff(a, b):
 
 
 def match_route(coords, stations, tolerance_mi=TOLERANCE_MI,
-                max_bearing_diff=MAX_BEARING_DIFF):
+                max_bearing_diff=MAX_BEARING_DIFF, cum_mi=None):
     """
     coords    (N,2) array of [lon, lat] from an OSRM geojson geometry
     stations  metadata frame with sensor_id, Latitude, Longitude, Dir, Length
+    cum_mi    optional cumulative distance per coordinate. Pass OSRM's own
+              annotation distances when you have them: the caller then measures
+              spans on exactly the same scale this function assigns positions
+              on, and a span cannot be priced against a length it never had.
 
     Returns the traversed stations ordered along the route, with `along_mi`
     (distance from origin) and `off_mi` (perpendicular offset).
     """
     coords = np.asarray(coords, dtype=float)
     rlat, rlon = coords[:, 1], coords[:, 0]
-    seg = np.hypot(np.diff(rlat) * 69.0, np.diff(rlon) * 54.6)
-    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    if cum_mi is not None:
+        cum = np.asarray(cum_mi, dtype=float)
+    else:
+        seg = np.hypot(np.diff(rlat) * 69.0, np.diff(rlon) * 54.6)
+        cum = np.concatenate([[0.0], np.cumsum(seg)])
 
     # bearing of the route at each vertex (last inherits the previous)
     brg = np.empty(len(rlat))
@@ -93,49 +101,3 @@ def match_route(coords, stations, tolerance_mi=TOLERANCE_MI,
     logger.info("matched %d stations (%d near, %d rejected on heading)",
                 len(out), int(near.sum()), int((near & ~aligned).sum()))
     return out, float(cum[-1])
-
-
-def traverse(matched, route_mi, speed_lookup, depart_ts):
-    """
-    Accumulate travel time along the matched stations, advancing the clock.
-
-    Segment length is the SPACING between consecutive matched stations, not each
-    station's own `Length` attribute. Length is the stretch a detector nominally
-    represents (~0.34 mi typical) and it does not tile the road — stations sit
-    ~0.58 mi apart — so summing Length under-counts a route's freeway time by
-    roughly 40%. Spacing tiles the route exactly and every mile gets exactly one
-    governing detector.
-
-    Each segment is evaluated at the time the traveller actually reaches it. An
-    hour into a trip you are in a different part of the peak than when you set
-    off, which is the entire reason a departure-time forecast beats a snapshot.
-
-    Returns (segments, freeway_minutes, uninstrumented_mi) where the last is the
-    head and tail of the route with no detector coverage — surface streets,
-    handled separately by the spread model and never silently folded in here.
-    """
-    if matched.empty:
-        return pd.DataFrame(), 0.0, route_mi
-
-    along = matched["along_mi"].to_numpy()
-    # each station governs until the next one; the last governs to route end
-    edges = np.concatenate([along, [route_mi]])
-    spans = np.diff(edges)
-
-    t = pd.Timestamp(depart_ts)
-    rows = []
-    for (r, miles) in zip(matched.itertuples(), spans):
-        mph = speed_lookup(int(r.sensor_id), t)
-        if not mph or mph <= 0 or miles <= 0:
-            continue
-        minutes = float(miles) / mph * 60.0
-        rows.append({"sensor_id": int(r.sensor_id), "along_mi": float(r.along_mi),
-                     "miles": float(miles), "mph": float(mph),
-                     "minutes": minutes, "arrive": t})
-        t = t + pd.Timedelta(minutes=minutes)
-
-    segs = pd.DataFrame(rows)
-    freeway_minutes = float(segs["minutes"].sum()) if len(segs) else 0.0
-    # the head of the route before the first detector is uninstrumented
-    uninstrumented = float(along[0])
-    return segs, freeway_minutes, uninstrumented

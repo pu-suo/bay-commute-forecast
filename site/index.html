@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bay Commute Forecast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+  <div style="position:relative">
+    <div id="map"></div>
+    <div class="scrubber">
+      <div class="row">
+        <time id="slotLabel">—</time>
+        <div class="legend" id="legend"></div>
+        <span class="hint">drag to move through the week</span>
+      </div>
+      <input type="range" id="slot" min="0" max="167" value="8" step="1">
+    </div>
+  </div>
+
+  <div class="panel">
+    <section class="masthead">
+      <h1>Bay Commute Forecast</h1>
+      <p>Day-ahead freeway travel times for the Bay Area, with the accuracy published.</p>
+    </section>
+
+    <section>
+      <h2>Plan a drive</h2>
+      <div class="field"><span class="pin a">A</span>
+        <input id="from" placeholder="click the map, or lat,lon" value="37.4419,-122.1430"></div>
+      <div class="field"><span class="pin b">B</span>
+        <input id="to" placeholder="click the map, or lat,lon" value="37.6213,-122.3790"></div>
+      <div class="modes">
+        <button id="mLeave" aria-pressed="true">Leave at</button>
+        <button id="mArrive" aria-pressed="false">Arrive by</button>
+      </div>
+      <div class="when">
+        <input type="date" id="day"><input type="time" id="time" value="08:00" step="900">
+      </div>
+      <button class="go" id="go">Forecast this drive</button>
+    </section>
+
+    <section class="answer" id="answer">
+      <h2 id="answerHead">Forecast</h2>
+      <div class="headline">
+        <span class="big" id="mins">—</span><span class="unit">min</span>
+        <span class="arrive">arrive<b id="arr">—</b></span>
+      </div>
+      <div class="split">
+        <div class="bar"><i class="m" id="barM"></i><i class="e" id="barE"></i></div>
+        <div class="splitkey"><span id="keyM"></span><span id="keyE"></span></div>
+      </div>
+      <div class="caveat" id="caveat"></div>
+      <canvas class="chart" id="profile"></canvas>
+      <table class="segs" id="segs"></table>
+    </section>
+
+    <section>
+      <h2>The nine named commutes</h2>
+      <div class="corridors" id="corridors"></div>
+    </section>
+
+    <section class="week">
+      <h2>Week ahead <span id="weekName" style="color:var(--ink-2)"></span></h2>
+      <div id="week"></div>
+    </section>
+
+    <section class="events">
+      <h2>Events in the horizon</h2>
+      <ul id="events"></ul>
+    </section>
+
+    <footer>
+      Freeway times are forecasts from Caltrans PeMS detectors and are scored on the
+      accuracy page. Surface-street portions are <em>estimates</em> from a spread model
+      with no ground truth, are marked wherever they appear, and are excluded from every
+      published accuracy figure.
+    </footer>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

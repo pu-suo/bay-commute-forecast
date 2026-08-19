@@ -1,0 +1,276 @@
+# forecast/route.py
+"""
+Origin and destination in, a day-ahead travel time out.
+
+This is where the pieces meet. A route is decomposed into spans, each span is
+priced by whatever evidence covers it, and the clock advances across them:
+
+  freeway span   a PeMS detector governs it. Priced from the forecast table --
+                 a real prediction, scored on the accuracy page.
+  surface span   no detector within tolerance. Priced by scaling OSRM's own
+                 free-flow duration by the spread model. An ESTIMATE, labelled
+                 as one everywhere it appears, and excluded from published
+                 accuracy.
+
+Keeping those two apart is the whole discipline of the module. A single number
+that silently blends a measured forecast with an unvalidated proxy is worse than
+either, because nobody can tell which part failed.
+
+Spans are traversed in order with the clock advancing, so a segment forty
+minutes into a trip is priced at the forecast for the time the driver reaches
+it, not the time they left. On a long peak-hour trip that is the difference
+between the answer and a plausible-looking wrong answer.
+
+    python -m forecast.route --from 37.4419,-122.1430 --to 37.6213,-122.3790 \
+        --depart "2026-08-19 08:00"
+"""
+import argparse
+import json
+import logging
+import os
+import sys
+import urllib.parse
+import urllib.request
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from forecast.matching import match_route          # noqa: E402
+from forecast.surface import ALPHA, MIN_SPEED_MPH  # noqa: E402
+
+logger = logging.getLogger("route")
+
+OSRM = os.environ.get("OSRM_URL", "http://localhost:5001")
+# Mainline detectors sit ~0.6 mi apart. A gap much larger than that means the
+# route left the instrumented freeway -- an off-ramp, an arterial, a rural
+# stretch -- and pretending one detector speaks for six miles of surface street
+# is exactly the silent blending this module exists to prevent.
+MAX_FREEWAY_SPAN_MI = 2.5
+SURFACE_RADIUS_MI = 2.0
+SURFACE_MAX_STATIONS = 6
+
+
+def osrm_route(origin, dest, base=OSRM):
+    """(coords[lon,lat], cumulative_miles, cumulative_freeflow_minutes)."""
+    coords = f"{origin[1]},{origin[0]};{dest[1]},{dest[0]}"
+    q = urllib.parse.urlencode({"overview": "full", "geometries": "geojson",
+                                "annotations": "duration,distance"})
+    url = f"{base}/route/v1/driving/{coords}?{q}"
+    with urllib.request.urlopen(url, timeout=30) as r:
+        payload = json.load(r)
+    if payload.get("code") != "Ok":
+        raise RuntimeError(f"OSRM: {payload.get('code')} {payload.get('message','')}")
+    route = payload["routes"][0]
+    pts = np.array(route["geometry"]["coordinates"], dtype=float)
+
+    ann_d, ann_t = [], []
+    for leg in route["legs"]:
+        ann_d.extend(leg["annotation"]["distance"])
+        ann_t.extend(leg["annotation"]["duration"])
+    # annotations are per edge between consecutive points; prepend the origin
+    cum_mi = np.concatenate([[0.0], np.cumsum(np.array(ann_d) / 1609.344)])
+    cum_min = np.concatenate([[0.0], np.cumsum(np.array(ann_t) / 60.0)])
+    return pts, cum_mi, cum_min
+
+
+class Forecast:
+    """The nightly table, indexed for lookup by (station, timestamp)."""
+
+    def __init__(self, serve_dir, stations_meta):
+        d = os.path.expanduser(serve_dir)
+        fc = pd.read_parquet(os.path.join(d, "forecast.parquet"))
+        self.slot = int(pd.Series(sorted(fc["ts"].unique()[:2]))
+                        .diff().dropna().dt.total_seconds().iloc[0] // 60) or 15
+        # Convert through datetime64[s] rather than dividing raw ints: Parquet
+        # round-trips these as microseconds while Timestamp.value is always
+        # nanoseconds, so a hand-rolled //10**9 silently keys the two sides a
+        # thousandfold apart and every lookup misses.
+        fc["key"] = (fc["station"].astype(np.int64) * 10 ** 12 +
+                     fc["ts"].to_numpy().astype("datetime64[s]").astype(np.int64))
+        self.mph = dict(zip(fc["key"], fc["mph"]))
+        self.seasonal = dict(zip(fc["key"], fc["seasonal_speed"]))
+        self.freeflow = (pd.read_parquet(os.path.join(d, "freeflow.parquet"))
+                           .set_index("station")["freeflow"].to_dict())
+        self.meta = stations_meta
+        self.start = fc["ts"].min()
+        self.end = fc["ts"].max()
+
+    def _key(self, station, ts):
+        snapped = pd.Timestamp(ts).floor(f"{self.slot}min")
+        return int(station) * 10 ** 12 + int(snapped.timestamp())
+
+    def speed(self, station, ts):
+        return self.mph.get(self._key(station, ts))
+
+    def ratio(self, station, ts):
+        """predicted / free-flow for one station: the spread model's input."""
+        mph = self.speed(station, ts)
+        ff = self.freeflow.get(int(station))
+        if mph is None or not ff:
+            return None
+        return float(np.clip(mph / ff, 0.15, 1.05))
+
+
+def _spread_factor(fc, lat, lon, ts, radius_mi=SURFACE_RADIUS_MI,
+                   max_stations=SURFACE_MAX_STATIONS, alpha=ALPHA):
+    """
+    Inverse-distance-squared weighted freeway ratio near a point, damped by alpha.
+
+    Returns (factor, n_stations, mean_ratio). factor of 1.0 means free-flow, so
+    a point with no freeway within the radius gets no adjustment rather than an
+    invented one.
+    """
+    m = fc.meta
+    d = np.hypot((m["Latitude"].to_numpy() - lat) * 69.0,
+                 (m["Longitude"].to_numpy() - lon) * 54.6)
+    near = np.where(d <= radius_mi)[0]
+    if near.size == 0:
+        return 1.0, 0, None
+    near = near[np.argsort(d[near])][:max_stations]
+    ids = m["sensor_id"].astype(int).to_numpy()[near]
+
+    ratios, weights = [], []
+    for sid, dist in zip(ids, d[near]):
+        r = fc.ratio(sid, ts)
+        if r is None:
+            continue
+        ratios.append(r)
+        weights.append(1.0 / max(dist, 0.15) ** 2)
+    if not ratios:
+        return 1.0, 0, None
+    w = np.array(weights) / np.sum(weights)
+    ratio = float(np.dot(w, ratios))
+    return 1.0 - alpha * (1.0 - ratio), len(ratios), ratio
+
+
+def build_spans(matched, route_mi):
+    """
+    Cut the route into freeway spans (one detector each) and surface spans.
+
+    Each matched station governs from where it sits to the next one. A span
+    longer than MAX_FREEWAY_SPAN_MI is reclassified as surface: the detector
+    behind it stopped being evidence somewhere in the middle, and the honest
+    move is to stop claiming it.
+    """
+    spans = []
+    if matched.empty:
+        return [{"kind": "surface", "start_mi": 0.0, "end_mi": route_mi,
+                 "sensor_id": None}]
+
+    along = matched["along_mi"].to_numpy()
+    if along[0] > 0.01:
+        spans.append({"kind": "surface", "start_mi": 0.0,
+                      "end_mi": float(along[0]), "sensor_id": None})
+
+    edges = np.concatenate([along, [route_mi]])
+    for i, row in enumerate(matched.itertuples()):
+        a, b = float(edges[i]), float(edges[i + 1])
+        if b - a <= 0:
+            continue
+        kind = "freeway" if (b - a) <= MAX_FREEWAY_SPAN_MI else "surface"
+        spans.append({"kind": kind, "start_mi": a, "end_mi": b,
+                      "sensor_id": int(row.sensor_id) if kind == "freeway" else None,
+                      "lat": float(row.Latitude), "lon": float(row.Longitude),
+                      "freeway": row.Fwy, "direction": row.Dir})
+    return spans
+
+
+def price(spans, fc, pts, cum_mi, cum_min, depart):
+    """Walk the spans in order, advancing the clock, pricing each by its evidence."""
+    t = pd.Timestamp(depart)
+    out = []
+    for sp in spans:
+        miles = sp["end_mi"] - sp["start_mi"]
+        if miles <= 0:
+            continue
+        mid = (sp["start_mi"] + sp["end_mi"]) / 2
+        j = int(np.clip(np.searchsorted(cum_mi, mid), 0, len(pts) - 1))
+        lat, lon = float(pts[j][1]), float(pts[j][0])
+
+        if sp["kind"] == "freeway":
+            mph = fc.speed(sp["sensor_id"], t)
+            if mph:
+                minutes = miles / mph * 60.0
+                out.append({**sp, "miles": miles, "mph": float(mph),
+                            "minutes": minutes, "arrive": t, "estimate": False,
+                            "lat": lat, "lon": lon})
+                t += pd.Timedelta(minutes=minutes)
+                continue
+            sp = {**sp, "kind": "surface", "sensor_id": None}   # no forecast: fall back
+
+        # free-flow duration for exactly this stretch, from OSRM's own profile
+        ff_min = float(np.interp(sp["end_mi"], cum_mi, cum_min) -
+                       np.interp(sp["start_mi"], cum_mi, cum_min))
+        factor, n, ratio = _spread_factor(fc, lat, lon, t)
+        ff_speed = miles / ff_min * 60.0 if ff_min > 0 else 30.0
+        est_speed = max(ff_speed * factor, MIN_SPEED_MPH)
+        minutes = miles / est_speed * 60.0
+        out.append({**sp, "miles": miles, "mph": est_speed, "minutes": minutes,
+                    "arrive": t, "estimate": True, "spread_factor": factor,
+                    "spread_stations": n, "freeway_ratio": ratio,
+                    "lat": lat, "lon": lon})
+        t += pd.Timedelta(minutes=minutes)
+    return pd.DataFrame(out)
+
+
+def plan(origin, dest, depart, fc, base=OSRM):
+    """Full route forecast. Returns (segments, summary)."""
+    pts, cum_mi, cum_min = osrm_route(origin, dest, base)
+    route_mi = float(cum_mi[-1])
+    matched, _ = match_route(pts, fc.meta, cum_mi=cum_mi)
+    segs = price(build_spans(matched, route_mi), fc, pts, cum_mi, cum_min, depart)
+
+    fwy = segs[~segs["estimate"]] if len(segs) else segs
+    srf = segs[segs["estimate"]] if len(segs) else segs
+    summary = {
+        "depart": str(pd.Timestamp(depart)),
+        "arrive": str(pd.Timestamp(depart) + pd.Timedelta(minutes=float(segs["minutes"].sum()))),
+        "total_minutes": float(segs["minutes"].sum()),
+        "freeway_minutes": float(fwy["minutes"].sum()) if len(fwy) else 0.0,
+        "surface_minutes": float(srf["minutes"].sum()) if len(srf) else 0.0,
+        "route_miles": route_mi,
+        "freeway_miles": float(fwy["miles"].sum()) if len(fwy) else 0.0,
+        "surface_miles": float(srf["miles"].sum()) if len(srf) else 0.0,
+        "osrm_freeflow_minutes": float(cum_min[-1]),
+        "stations_used": int(len(fwy)),
+    }
+    summary["measured_share"] = (summary["freeway_minutes"] /
+                                 summary["total_minutes"]) if summary["total_minutes"] else 0.0
+    return segs, summary
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--from", dest="origin", required=True, help="lat,lon")
+    p.add_argument("--to", dest="dest", required=True, help="lat,lon")
+    p.add_argument("--depart", required=True)
+    p.add_argument("--serve", default="~/traffic-data/serve")
+    p.add_argument("--data", default="~/traffic-data/stations")
+    p.add_argument("--osrm", default=OSRM)
+    a = p.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+
+    meta = pd.read_csv(os.path.join(os.path.expanduser(a.data), "_meta", "d04_meta.txt"),
+                       sep="\t")
+    meta = meta[meta["Type"] == "ML"].rename(columns={"ID": "sensor_id"})
+    fc = Forecast(a.serve, meta)
+
+    origin = tuple(float(x) for x in a.origin.split(","))
+    dest = tuple(float(x) for x in a.dest.split(","))
+    segs, s = plan(origin, dest, a.depart, fc, a.osrm)
+
+    logger.info("\n%s -> %s   depart %s", a.origin, a.dest, s["depart"])
+    logger.info("%.1f min   arrive %s", s["total_minutes"], s["arrive"][11:16])
+    logger.info("  freeway  %5.1f mi  %5.1f min   (%d detectors, forecast)",
+                s["freeway_miles"], s["freeway_minutes"], s["stations_used"])
+    logger.info("  surface  %5.1f mi  %5.1f min   (estimate, not scored)",
+                s["surface_miles"], s["surface_minutes"])
+    logger.info("  OSRM free-flow reference: %.1f min", s["osrm_freeflow_minutes"])
+    logger.info("  %.0f%% of the journey time is measured forecast",
+                s["measured_share"] * 100)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

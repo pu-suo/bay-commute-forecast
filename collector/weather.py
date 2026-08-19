@@ -79,11 +79,53 @@ def corridor_points(meta, corridors):
     return points
 
 
+def grid_points(meta, step):
+    """
+    {(lat,lon): [cell_label]} for every grid cell that actually contains a
+    mainline station.
+
+    Corridor midpoints were enough for nine corridors, but the network spans
+    Gilroy to Ukiah -- 130 miles -- and nearest-point assignment from five
+    distinct locations would hand a Santa Rosa station the weather in Oakland.
+    A regular grid over the occupied cells is coarse in the right way: it is
+    wrong by at most half a cell everywhere, instead of nearly right in five
+    places and badly wrong elsewhere.
+
+    Empty cells are skipped. Of the 90 cells in the bounding box only 30 hold a
+    station, so the grid costs a third of what its extent suggests.
+    """
+    import numpy as np
+    ml = meta[meta["Type"] == "ML"]
+    lat = (np.floor(ml["Latitude"] / step) * step + step / 2).round(3)
+    lon = (np.floor(ml["Longitude"] / step) * step + step / 2).round(3)
+    cells = {}
+    for la, lo in set(zip(lat, lon)):
+        cells[(float(la), float(lo))] = [f"cell_{la}_{lo}"]
+    return dict(sorted(cells.items()))
+
+
 def fetch_archived_forecast(lat, lon, start, end):
     """Hourly archived-forecast rows for one point and date range."""
     data = _get(HIST_FORECAST, {
         "latitude": lat, "longitude": lon,
         "start_date": start, "end_date": end,
+        "hourly": ",".join(HOURLY_VARS),
+        "timezone": TIMEZONE,
+    })
+    hourly = data.get("hourly") or {}
+    times = hourly.get("time") or []
+    return [
+        {"ts": times[i], "lat": lat, "lon": lon,
+         **{v: (hourly.get(v) or [None] * len(times))[i] for v in HOURLY_VARS}}
+        for i in range(len(times))
+    ]
+
+
+def fetch_live_forecast(lat, lon, days=7):
+    """Hourly forecast going forward -- what the nightly job actually serves on."""
+    data = _get(LIVE_FORECAST, {
+        "latitude": lat, "longitude": lon,
+        "forecast_days": days,
         "hourly": ",".join(HOURLY_VARS),
         "timezone": TIMEZONE,
     })
@@ -102,6 +144,14 @@ def main(argv=None):
     p.add_argument("--end", default="2026-08-15")
     p.add_argument("--out", default="~/traffic-data/weather")
     p.add_argument("--meta", default="~/traffic-data/corridors/_meta/d04_meta.txt")
+    p.add_argument("--grid-step", type=float, default=None,
+                   help="degrees; when set, cover occupied grid cells instead of "
+                        "corridor midpoints (network-scale mode)")
+    p.add_argument("--live", action="store_true",
+                   help="fetch the forward forecast instead of the archive")
+    p.add_argument("--forecast-days", type=int, default=7)
+    p.add_argument("--name", default="archived_forecast",
+                   help="output basename, so grid and corridor sets coexist")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
@@ -111,11 +161,25 @@ def main(argv=None):
     import pandas as pd
 
     meta = parse_station_meta(os.path.expanduser(a.meta))
-    points = corridor_points(meta, CORRIDORS)
-    logger.info("%d corridors -> %d distinct weather points", len(CORRIDORS), len(points))
+    if a.grid_step:
+        points = grid_points(meta, a.grid_step)
+        logger.info("%.2f deg grid -> %d occupied cells", a.grid_step, len(points))
+    else:
+        points = corridor_points(meta, CORRIDORS)
+        logger.info("%d corridors -> %d distinct weather points",
+                    len(CORRIDORS), len(points))
 
     rows = []
-    for (lat, lon), slugs in points.items():
+    if a.live:
+        for (lat, lon), slugs in points.items():
+            try:
+                got = fetch_live_forecast(lat, lon, a.forecast_days)
+                rows.extend(got)
+            except RuntimeError as ex:
+                logger.error("  %.2f,%.2f live FAILED: %s", lat, lon, ex)
+        logger.info("live forecast: %d hourly rows over %d points",
+                    len(rows), len(points))
+    for (lat, lon), slugs in (() if a.live else points.items()):
         # chunk by year: one multi-year request is fine for the API but a failure
         # mid-range would otherwise cost the whole point
         for year in range(int(a.start[:4]), int(a.end[:4]) + 1):
@@ -135,11 +199,12 @@ def main(argv=None):
     os.makedirs(out, exist_ok=True)
     df = pd.DataFrame(rows)
     df["ts"] = pd.to_datetime(df["ts"])
-    path = os.path.join(out, "archived_forecast.parquet")
+    path = os.path.join(out, f"{a.name}.parquet")
     df.to_parquet(path, index=False)
 
     mapping = {f"{lat},{lon}": slugs for (lat, lon), slugs in points.items()}
-    with open(os.path.join(out, "points.json"), "w") as f:
+    with open(os.path.join(out, f"{a.name}_points.json"
+                           if a.name != "archived_forecast" else "points.json"), "w") as f:
         json.dump(mapping, f, indent=1)
 
     logger.info("wrote %d rows -> %s", len(df), path)
