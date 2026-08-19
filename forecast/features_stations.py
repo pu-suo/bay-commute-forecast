@@ -168,11 +168,23 @@ def sample_rows(data_dir, seasonal, start, end, every_nth=SAMPLE_EVERY_NTH_INTER
 
 
 def attach_station_attrs(df, meta):
-    """Generalisable station attributes, so unseen stations still get a prediction."""
+    """
+    Generalisable station attributes, so unseen stations still get a prediction.
+
+    Unmatched stations are dropped here rather than downstream, and the freeway
+    number is forced to an integer string. Both matter more than they look: a
+    left join that leaves one NaN promotes the whole column to float, so the
+    category becomes "101.0" instead of "101" and matches nothing the model
+    learned. Training and serving happened to differ by exactly one such NaN,
+    which silently voided the freeway feature for every served row while
+    producing perfectly plausible speeds.
+    """
     m = meta.copy()
     m["station"] = m["sensor_id"].astype(int)
     cols = ["station", "Fwy", "Dir", "Lanes", "Length", "Latitude", "Longitude"]
     df = df.merge(m[cols], on="station", how="left")
+    df = df[df["Fwy"].notna() & df["Dir"].notna()].copy()
+    df["Fwy"] = df["Fwy"].astype(int).astype(str)
     return df.rename(columns={"Fwy": "freeway", "Dir": "direction",
                               "Lanes": "lanes", "Length": "seg_miles"})
 
@@ -338,6 +350,13 @@ def attach_events(df, events_path, max_miles=12.0):
 
 EVENT_WINDOW_BEFORE_H = 4.0
 EVENT_WINDOW_AFTER_H = 6.0
+
+# Fixed vocabularies. A class that never occurs in a training sample would
+# otherwise be absent from the model's category list and arrive at serve time as
+# a silent NaN -- "unknown" weather is exactly that case, since the archive
+# covers every training row but the live forecast can run short of the horizon.
+WX_CLASSES = ["dry", "rain_light", "rain_heavy", "unknown"]
+HOLIDAY_CLASSES = ["none", "adjacent", "holiday"]
 
 NUMERIC = ["seasonal_speed", "seasonal_sd", "tod", "dow", "month", "is_weekend",
            "lanes", "seg_miles", "Latitude", "Longitude",

@@ -36,6 +36,14 @@ from datetime import datetime
 
 logger = logging.getLogger("events_normalize")
 
+# A cancelled event is not a smaller event, it is no event: nobody drives to it.
+# Venue pages keep the listing and edit the title, so the title is the only
+# signal there is. Leaving these in teaches the model that a sold-out arena
+# sometimes does nothing.
+CANCELLED = re.compile(
+    r"^\s*(cancell?ed|postponed|rescheduled)\b"
+    r"|\b(cancell?ed|postponed)\s*$", re.I)
+
 # Rows that are site furniture or merchandise rather than something people drive to.
 NON_EVENT = re.compile(
     r"(season tickets?|wait\s*list|protocol update|events? calendar|filter by|"
@@ -76,13 +84,16 @@ def _plausible_time(dt):
 
 def normalize(rows):
     """Clean, retime and dedupe raw crawler rows. Returns (events, stats)."""
-    stats = {"in": len(rows), "non_event": 0, "time_recovered": 0,
-             "time_demoted": 0, "deduped": 0}
+    stats = {"in": len(rows), "non_event": 0, "cancelled": 0,
+             "time_recovered": 0, "time_demoted": 0, "deduped": 0}
     cleaned = []
     for r in rows:
         title = (r.get("title") or "").strip()
         if not title or NON_EVENT.search(title):
             stats["non_event"] += 1
+            continue
+        if CANCELLED.search(title):
+            stats["cancelled"] += 1
             continue
 
         start, has_time = r["start"], bool(r.get("has_time"))
@@ -130,8 +141,15 @@ def main(argv=None):
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
+    # A shell glob of events_*.jsonl also matches this script's own outputs, so
+    # a nightly run would re-ingest yesterday's clean file and compound the
+    # dedupe every night. Skip them by name rather than relying on the caller.
+    derived = {"events_clean.jsonl", "events_merged.jsonl"}
     rows = []
     for path in a.inputs:
+        if os.path.basename(path) in derived:
+            logger.info("skipping derived input %s", os.path.basename(path))
+            continue
         with open(os.path.expanduser(path)) as f:
             rows.extend(json.loads(line) for line in f if line.strip())
 
@@ -142,7 +160,7 @@ def main(argv=None):
         for e in events:
             f.write(json.dumps(e) + "\n")
 
-    logger.info("in=%(in)d  dropped_non_event=%(non_event)d  "
+    logger.info("in=%(in)d  dropped_non_event=%(non_event)d  cancelled=%(cancelled)d  "
                 "time_recovered=%(time_recovered)d  time_demoted=%(time_demoted)d  "
                 "deduped=%(deduped)d  out=%(out)d", stats)
     logger.info("wrote %s", out)

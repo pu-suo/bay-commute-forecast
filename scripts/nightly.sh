@@ -41,7 +41,9 @@ $PY -m collector.merge_league_times --events "$DATA/events/events_clean.jsonl" \
     --out "$DATA/events/events_merged.jsonl"
 
 echo "--- weather: forward forecast on the station grid"
-$PY -m collector.weather --live --forecast-days 7 --grid-step 0.25 \
+# 8, not 7: the horizon starts tomorrow and runs seven days, so the last day
+# would otherwise have no weather and arrive at the model as "unknown".
+$PY -m collector.weather --live --forecast-days 8 --grid-step 0.25 \
     --name live_forecast --meta "$DATA/stations/_meta/d04_meta.txt" --out "$DATA/weather"
 
 if [ "$(date +%u)" = "7" ]; then

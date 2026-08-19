@@ -1,66 +1,242 @@
 # Bay Commute Forecast
 
-Day-ahead travel-time forecasts for nine Bay Area freeway corridors, with the
-accuracy published alongside them.
+Day-ahead travel-time forecasts for the Bay Area freeway network — any origin to
+any destination — with the accuracy published alongside them.
 
-Not a real-time traffic map — Google Maps already does that better than anyone
-could. This answers a different question: **what will your commute look like
+Not a real-time traffic map. Google Maps already does that better than anyone
+could. This answers a different question: **what will your drive look like
 tomorrow, or next Thursday, and why?** Nothing else answers that, and it is the
 question people actually plan around.
 
-Forecasts are in **minutes**, not mph, because minutes are the unit people think in.
+Forecasts are in **minutes**, because minutes are the unit people think in.
+
+![the map](docs/screenshot.png)
+
+---
+
+## What it does
+
+- **Route anything.** Origin and destination anywhere in the Bay Area. OSRM finds
+  the path, the path is matched onto the 2,291 PeMS detectors it actually
+  traverses, and each stretch is priced from that detector's forecast.
+- **Advance the clock.** A segment forty minutes into a trip is priced at the
+  forecast for the time you reach it, not the time you left.
+- **Leave at / arrive by.** Arrive-by is solved by search, not subtraction:
+  travel time depends on departure time, so leaving 30 minutes earlier can save
+  45.
+- **A week at a glance.** Seven days × 24 hours per corridor, in the shape of a
+  weather report.
+- **Say what is measured and what is guessed.** Freeway time is a forecast and is
+  scored. Surface-street time is an estimate from a spread model with no ground
+  truth; it is labelled everywhere it appears and excluded from every accuracy
+  figure.
 
 ---
 
 ## Current status
 
-The data pipeline is complete and validated. The forecaster works. Feature
-selection, model training, and the UI are deliberately still open.
-
 | Component | State |
 |---|---|
-| Traffic ingestion | ✅ 2,050 days, 2021–2026, zero failures |
-| Event ingestion | ✅ 1,339 events, 7 venues |
-| Weather ingestion | ✅ 364,608 archived-forecast rows |
-| Roadwork ingestion | ✅ daily cron, accumulating |
-| Baseline forecaster | ✅ MAE 1.09 min, rolling-origin validated |
-| Feature engineering | ⬜ open |
-| Model training | ⬜ open |
-| Site / UI | ⬜ open |
+| Traffic ingestion, corridors | ✅ 2,050 days, 2021–2026 |
+| Traffic ingestion, all stations | ✅ 2,052 days × 2,291 detectors, 1.4 GB |
+| Event ingestion | ✅ 1,329 events, 7 venues |
+| Weather ingestion | ✅ 1.22M archived-forecast rows on a 30-cell grid |
+| Roadwork ingestion | ✅ daily launchd agent, accumulating |
+| Seasonal baseline | ✅ 3.96M (station, weekday, slot) cells, 36 s build |
+| Network model | ✅ trained, spatial + temporal holdout |
+| Routing | ✅ self-hosted OSRM, direction-aware detector matching |
+| Serving | ✅ nightly batch → 1.3 M-row forecast table |
+| Site | ✅ map, week view, route planner, accuracy page |
+| Deployment | ⬜ still local |
+
+---
+
+## How it works
+
+```
+PeMS station_5min ──▶ station Parquet ──▶ seasonal profile ──┐
+   (2,291 detectors,      (one file/day,     (station × dow    │
+    5-min, 2021–)          740 KB zstd)       × slot)          │
+                                                              ▼
+Open-Meteo archived forecast ─────────────────────────▶  LightGBM  ──▶ nightly
+   (30-cell grid, hourly)                                  (speed)      forecast
+                                                              ▲         table
+Venue calendars + league APIs ────────────────────────────────┘        (1.3M rows)
+   (7 venues, distance to nearest)                                        │
+                                                                          ▼
+                        OSRM ──▶ direction-aware detector matching ──▶ route
+                     (self-hosted)      + surface spread model          minutes
+```
+
+### The model predicts detector speed, not corridor time
+
+The first version of this project forecast nine hand-defined corridors, with
+`corridor` as a categorical feature. That cannot scale: a category the model has
+never seen is useless, and there is no affordable way to train on 2,291 of them.
+
+So the unit is a detector, and a detector is described by its **attributes**:
+freeway, direction, lane count, position, segment length, and its own seasonal
+profile. Nothing identifies it. That is what makes it legal to train on a sample
+of the network and serve all of it — and it is checked rather than assumed, by
+withholding 30% of detectors from training entirely and scoring them separately.
+
+### The seasonal profile is a feature, not a rival
+
+The mean speed for a given (detector, weekday, time-of-day) is already a strong
+day-ahead forecast. A model asked to predict speed from scratch would spend most
+of its capacity rediscovering that structure. Handing it over as a feature lets
+the model spend its capacity on the part that is actually hard: the deviation.
+
+Two profiles are maintained deliberately:
+
+| File | Fitted on | Used by |
+|---|---|---|
+| `_seasonal_trainonly.parquet` | days before the evaluation split | training, validation |
+| `_seasonal.parquet` | everything up to today | the nightly serving job |
+
+Keeping them separate is what stops a nightly refit from silently invalidating a
+published accuracy number.
+
+### A route is spans, and spans are priced by their evidence
+
+| Span | Evidence | Scored? |
+|---|---|---|
+| freeway | a PeMS detector within 530 ft, heading-aligned | yes |
+| surface | no detector — OSRM free-flow, scaled by the spread model | **no** |
+
+Segment length is the **spacing between consecutive detectors**, not each
+detector's `Length` attribute. `Length` is the stretch a detector nominally
+represents (~0.34 mi) and it does not tile the road (~0.58 mi spacing), so
+summing it under-counts freeway time by roughly 40%.
+
+The surface spread model estimates local-street speed from nearby freeway
+conditions:
+
+```
+local_speed    = free_flow × (1 − ALPHA × (1 − freeway_ratio))
+freeway_ratio  = inverse-distance²-weighted mean of (forecast / free-flow)
+                 over ≤6 mainline detectors within 2 mi
+ALPHA          = 0.5     stated prior, NOT fitted
+```
+
+There is no public source of Bay Area arterial speeds, so `ALPHA` cannot be
+fitted and the model cannot be scored. It is a stated assumption, reported
+separately, and excluded from every accuracy figure. The sign is not even
+guaranteed: freeway congestion can divert traffic onto parallel arterials
+(slowing them) or hold it on the freeway (freeing them).
 
 ---
 
 ## How well it works
 
-Rolling-origin backtest — every prediction uses only data from strictly before
-the day being predicted. 1.33M held-out rows across 19 months.
+Everything below is measured on data the model never trained on. The split is
+temporal — training ends before validation starts, validation ends before the
+test window starts — and 30% of detectors are withheld from training entirely.
+
+### On the nine named commutes, in minutes
+
+Travel time composed from detector-level forecasts, over **268,000 held-out
+15-minute intervals** across 13 months. The baseline is the seasonal profile:
+the same detector, weekday and time of day averaged over history. At a
+day-ahead horizon that is a strong opponent — current traffic carries almost no
+signal and calendar effects carry nearly all of it — and any model has to beat
+it to earn its place.
 
 ```
-weighted MAE          1.09 min   (5.7% of mean travel time)
-median error          0.30 min   (18 seconds)
-p99 error            10.65 min
-skill vs "same time last week"   +17% to +26%
+weighted MAE      1.28 min   vs 1.46 min baseline    +12.1%
+peak MAE          2.59 min   vs 3.12 min baseline    +17.2%
 ```
 
-Per corridor:
+| Corridor | mi | detector cov. | mean trip | baseline | model | gain | peak gain |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Bay Bridge WB — Berkeley→SF | 7.4 | 60% | 8.7 | 1.227 | 1.091 | +11.1% | +15.0% |
+| Bay Bridge EB — SF→Berkeley | 7.8 | 49% | 8.9 | 1.112 | 1.158 | **−4.1%** | −7.3% |
+| US-101 NB — San Jose→SFO | 32.3 | 57% | 31.7 | 1.618 | 1.412 | +12.7% | +20.5% |
+| US-101 SB — SFO→San Jose | 31.1 | 59% | 31.7 | 1.825 | 1.534 | +15.9% | +22.4% |
+| I-880 NB — San Jose→Oakland | 38.5 | 66% | 39.8 | 2.304 | 1.942 | +15.7% | +21.5% |
+| I-880 SB — Oakland→San Jose | 36.7 | 70% | 38.5 | 2.837 | 2.469 | +13.0% | +19.1% |
+| I-580 WB — Altamont→Dublin | 14.0 | 86% | 13.1 | 0.449 | 0.430 | +4.2% | +6.1% |
+| I-580 EB — Dublin→Altamont | 14.6 | 83% | 14.8 | 0.933 | 0.822 | +11.9% | +18.0% |
+| SR-237 EB — Sunnyvale→Milpitas | 4.5 | 94% | 5.1 | 0.766 | 0.615 | +19.7% | +23.5% |
 
-| Corridor | Mean trip | MAE | Peak MAE |
-|---|---|---|---|
-| Bay Bridge WB — Berkeley→SF | 9.5 | 1.08 | 1.87 |
-| Bay Bridge EB — SF→Berkeley | 8.6 | 0.62 | 1.33 |
-| US-101 NB — San Jose→SFO | 32.0 | 1.03 | 1.98 |
-| US-101 SB — SFO→San Jose | 32.9 | 1.29 | 2.76 |
-| I-880 NB — San Jose→Oakland | 38.5 | 1.61 | 2.96 |
-| I-880 SB — Oakland→San Jose | 39.3 | 1.95 | 3.62 |
-| I-580 WB — Altamont→Dublin | 15.5 | 0.53 | 0.80 |
-| I-580 EB — Dublin→Altamont | 17.3 | 0.94 | 1.62 |
-| SR-237 EB — Sunnyvale→Milpitas | 10.3 | 0.78 | 1.77 |
+**The Bay Bridge eastbound is worse than the baseline, and it is left in the
+table.** It has the lowest detector coverage of the nine (49%) and a bottleneck
+the sensors cannot see: the toll plaza and its metering lights are upstream of
+the instrumented stretch. A model that has no feature for the thing actually
+setting the queue length is not going to beat an average, and quietly dropping
+the corridor would make the other eight look like a general result rather than
+a conditional one.
 
-The baseline is a **seasonal median** — the median of the last 8 same-weekday,
-same-time-of-day observations. Not a neural network. At a day-ahead horizon
-current traffic carries almost no signal and calendar effects carry nearly all
-of it, so this is the right architecture, and any model has to beat it to earn
-its place.
+### At detector level, in mph
+
+The number that matters here is not the gain, it is the **gap between the two
+right-hand columns**. The network has 2,291 detectors and the model trains on a
+sample of them; if skill came from memorising individual detectors, the unseen
+column would collapse.
+
+| Slice | n (seen) | baseline | seen | gain | unseen | gain |
+|---|---:|---:|---:|---:|---:|---:|
+| all | 1,685,219 | 3.048 | 2.880 | +5.5% | 2.700 | **+6.1%** |
+| peak | 490,440 | 4.625 | 4.298 | +7.1% | 4.147 | +6.3% |
+| congested (<45 mph typical) | 46,721 | 11.594 | 9.655 | +16.7% | 11.859 | +9.8% |
+| peak + congested | 41,091 | 11.504 | 9.543 | +17.0% | 11.915 | +11.0% |
+| holiday | 152,721 | 3.533 | 2.942 | +16.7% | 2.778 | **+18.2%** |
+| rain | 39,182 | 3.967 | 3.524 | +11.2% | 3.158 | +9.9% |
+| near an event | 34,370 | 3.889 | 3.650 | +6.1% | 3.667 | +6.9% |
+| worst 5% of intervals | 84,261 | 20.308 | 19.467 | +4.1% | 19.110 | +4.6% |
+
+**There is no holdout penalty.** Detectors the model has never seen gain 6.1%
+against 5.5% for detectors it trained on. The design — describe a detector by
+its attributes and its seasonal profile, never by its identity — holds, and
+that is what makes training on 275 detectors and serving 2,291 defensible
+rather than merely convenient.
+
+Where the model earns its keep is exactly where the baseline is weakest:
+**holidays (+17–18%)** and **congested peak intervals (+11–17%)**. On ordinary
+free-flowing intervals it has almost nothing to add, which is the correct
+answer — an average is already right there.
+
+### What the features are worth
+
+```
+seasonal_speed   69.2%     the profile does most of the work, as it should
+seasonal_sd      10.0%     how volatile this slot usually is
+tod               5.2%
+month             2.6%
+freeway           2.2%
+lanes             1.5%
+event_miles       1.3%     distance to the nearest venue, learned not hard-coded
+holiday_class     1.2%
+lat / lon         2.4%
+precip_3h         0.8%     accumulated rain beats instantaneous rain
+```
+
+Events reach the model as **distance to the nearest venue** plus hours since its
+start, rather than as a hand-drawn list of which corridors each venue is allowed
+to affect. The decay with distance is then something the data decides.
+
+### Selecting the model: the training loss is not the product metric
+
+Two candidates were trained: **A** on 275 detectors (9.5M readings) and **B** on
+620 detectors (22.4M readings). On the training objective B is clearly better —
+validation MAE 2.493 mph against A's 2.527. More data, better model, as expected.
+
+Scored on the **product** metric over the same validation window, the ranking
+flips:
+
+| Candidate | detectors | rows | valid. MAE (mph) | valid. route MAE (min) | peak (min) |
+|---|---:|---:|---:|---:|---:|
+| A | 275 | 9.5M | 2.527 | **1.283** | **2.441** |
+| B | 620 | 22.4M | **2.493** | 1.291 | 2.489 |
+
+Corridor time is a sum of `length / speed`, so error on a *slow* detector costs
+far more minutes than the same error on a fast one, and uniform mph MAE does not
+know that. Optimising and selecting on the training loss would have shipped the
+worse product.
+
+**A is shipped**, selected on route MAE over the validation window. The test
+window was scored once, afterwards. B's numbers are kept in
+`models/network_b/` as the record of the comparison.
 
 ---
 
@@ -69,11 +245,12 @@ its place.
 | Signal | Source | Auth | History | Forward |
 |---|---|---|---|---|
 | Traffic speed | Caltrans PeMS `station_5min`, district 4 | account | 2010→yesterday | — |
-| Corridor geometry | PeMS `meta` | account | snapshots | — |
+| Detector metadata | PeMS `meta` | account | snapshots | — |
+| Road geometry / routing | OpenStreetMap → self-hosted OSRM | none | — | — |
 | Weather (training) | Open-Meteo **Historical Forecast** | none | 2022→ | — |
 | Weather (serving) | Open-Meteo Forecast | none | — | 16 days |
 | Events | 7 venue calendars + Wayback | none | 2021→ | live |
-| Baseball / hockey | MLB StatsAPI, api-web.nhle.com | none | years | full seasons |
+| Baseball / hockey | MLB StatsAPI, `api-web.nhle.com` | none | years | full seasons |
 | Roadwork | Caltrans LCS | none | ✗ none | ~10-day lead |
 | Holidays | `holidays` package | none | ✓ | ✓ |
 
@@ -90,11 +267,18 @@ serve time. Training on the forecast that *was issued* keeps train and serve
 inputs the same kind of thing. This is the single most important data decision
 in the project and the easiest to get wrong.
 
+**A grid, not corridor midpoints.** The first weather pull sampled the nine
+corridor midpoints, which collapsed to five distinct locations. The network
+spans Gilroy to Ukiah — 130 miles — so nearest-point assignment would have handed
+a Santa Rosa detector the weather in Oakland. A 0.25° grid over the bounding box
+has 90 cells; only **30 contain a detector**, so covering the whole network
+properly costs a third of what its extent suggests.
+
 **Venue calendars over an events vendor.** One venue page lists every event type
 at that venue — the SAP Center calendar carries "Sharks vs. Bruins", "Bellator"
 and "Disney On Ice" together. Ticketmaster's Discovery API would be cleaner but
-self-serve registration is closed, and their website is JS-rendered with no
-event data in the HTML.
+self-serve registration is closed, and their site is JS-rendered with no event
+data in the HTML.
 
 **League APIs where they exist.** MLB and NHL publish free schedule APIs with
 exact start times and complete seasons. Merging them added **572 games the
@@ -103,13 +287,14 @@ upcoming events, so they capture a fraction of an 81-game home season.
 
 ### Known gaps
 
-- **NFL kickoff times.** No free source exists. ESPN 403s, pro-football-reference
-  403s, TheSportsDB 503s, Wikipedia's schedule table has no time column, and
-  Levi's own event pages omit them. Needs a hand-maintained table (~10 rows a
-  season) or a Ticketmaster key.
+- **NFL kickoff times.** No free source. ESPN 403s, pro-football-reference 403s,
+  TheSportsDB 503s, Wikipedia's schedule table has no time column, and Levi's own
+  event pages omit them. Needs a hand-maintained table (~10 rows a season).
 - **Chase Center** live calendar is a JS SPA. Wayback recovered 2022–2024, when
   the site was server-rendered; nothing since.
 - **School calendars** not yet collected. Likely a real AM-peak driver.
+- **Roadwork is collected but unused.** Caltrans publishes current state only, so
+  the archive began the day collection started and is still too short to train on.
 
 ---
 
@@ -119,17 +304,18 @@ Findings that shaped the design, all measured rather than assumed.
 
 **Only ~20% of forecast error sits in identifiable contexts.** Holidays 14.8%,
 weather 3.0%, events 2.8%. The other 80% is ordinary day-to-day variation and
-may be irreducible.
+may be irreducible. This is why the target was never "beat the baseline by 50%"
+— that number does not exist in this data.
 
 **Holidays are the biggest available win.** 2× normal error, 1.4× on adjacent
-travel days, and a simple correction recovers **16.8%** of error on the days it
-touches. Invisible to a day-of-week baseline.
+travel days, and invisible to a day-of-week baseline. The model recovers 17–18%
+of error on the intervals they touch.
 
-**Events are a UX feature, not an accuracy feature.** A 49ers home game adds
-**+12 to +20 minutes** on SR-237 East — measured, large, real. But five in-season
-game Sundays × ~36 affected intervals is 180 rows out of 1.33 million, so it
-cannot move a global metric. Worth building for the explanation line
-("Sunday 5pm on 237 will run 13 min instead of 9 — 49ers home game"), not for MAE.
+**Events are a UX feature more than an accuracy feature.** A 49ers home game
+adds **+12 to +20 minutes** on SR-237 East — measured, large, real. But five
+in-season game Sundays × ~36 affected intervals is a rounding error in a global
+metric. Worth building for the explanation line ("Sunday 5pm on 237 will run 13
+min instead of 9 — 49ers home game"), not for MAE.
 
 **Venue effects do not generalise.** Same metro, same method:
 
@@ -140,38 +326,51 @@ cannot move a global metric. Worth building for the explanation line
 | SAP Center | 17,500 | ~22:00 | +0.08 min |
 
 It takes a very large crowd leaving at once into a network that is *already*
-loaded. Late egress into an empty freeway does nothing.
+loaded. Late egress into an empty freeway does nothing. This is why the model is
+given distance-to-venue and left to find the decay itself.
 
-**Rain matters but resists simple correction.** Rain intervals have MAE 1.695 vs
-1.093 — 55% harder to predict — yet a multiplicative lookup factor makes them
-*worse*. Effect depends on intensity, duration, and probably whether it's the
-season's first storm. This is where a real model should earn its keep.
+**Rain matters and the model does handle it** — +10–11% on rain intervals, where
+an earlier multiplicative lookup factor made them *worse*. Effect depends on
+intensity, duration, and probably whether it is the season's first storm;
+`precip_3h` (accumulated) outranks instantaneous precipitation in the model.
 
-**Only 2.0% of Bay Area hours have any rain**, so the ceiling here is low
-regardless.
+**Only 2.6% of Bay Area hours have any rain**, so the ceiling here is low
+regardless of method.
 
 ---
 
 ## Data quality traps
 
 Each of these silently corrupts a model rather than failing loudly. All were hit
-during development.
+during development, and each cost more time to find than to fix.
 
 **PeMS imputes whole days.** `pct_observed` averages ~51% in district 4, and some
-days are 100% modelled. An imputed day looks completely normal — full station
+days are 100% modelled. An imputed day looks completely normal — full detector
 counts, plausible speeds, 288 intervals — and is only detectable via that column.
 An imputed day covering a real event teaches the model the event did nothing.
-9.5% of rows are dropped for this.
 
-**`pct_observed` is bimodal, not a gradient.** About a quarter of station-intervals
-sit at exactly 0 and the median is 100. Thresholding it removes whole segments
-from a corridor sum and corrupts the number it was meant to protect. Coverage is
-*reported*, and filtering happens at training time.
+**`pct_observed` is bimodal, not a gradient.** About a quarter of
+detector-intervals sit at exactly 0 and the median is 100. Thresholding it
+removes whole segments from a corridor sum and corrupts the number it was meant
+to protect. Coverage is *reported*; filtering happens at training time.
 
-**Partial coverage reads as a faster trip.** Travel time is a sum over stations,
+**Partial coverage reads as a faster trip.** Travel time is a sum over detectors,
 so missing sensors produce a *lower* number, which looks like free-flowing
-traffic rather than missing data. All travel times are scaled to full corridor
-length.
+traffic rather than missing data. Every travel time is scaled to full length.
+
+**Detector `Length` does not tile the road.** It averages 0.34 mi while detectors
+sit 0.58 mi apart. Summing it under-counts freeway time by ~40%. Routing uses
+spacing between consecutive matched detectors, which tiles exactly.
+
+**Proximity matches both carriageways.** Opposing directions of a divided freeway
+sit ~200 ft apart, so nearest-detector matching claimed 39 northbound *and* 41
+southbound detectors on one route — 134% of its own length as instrumented.
+Matching requires heading agreement as well as proximity.
+
+**Parquet round-trips timestamps as microseconds** while `Timestamp.value` is
+nanoseconds. A hand-rolled `// 10**9` on both sides keyed the forecast table and
+its lookups a thousandfold apart, and every route silently fell back to the
+surface model — which produced a plausible number rather than an error.
 
 **Venues disagree about time zones.** Stanford publishes UTC (`02:30:00Z`),
 Shoreline publishes local (`-07:00`). Unnormalised, every Friday night game lands
@@ -184,6 +383,23 @@ with zero asserted that 2021 was permanently dry — 15% of the corpus.
 "Stanford at California", which happens in Berkeley. Verified against
 schema.org `location`.
 
+**Cancelled events are not small events.** Venues keep the listing and edit the
+title. 23 of them were being fed to the model as ordinary sell-outs that
+mysteriously moved no traffic.
+
+**A `*.jsonl` glob matches the pipeline's own output.** The event normaliser was
+re-ingesting yesterday's cleaned file, compounding its dedupe every run. Derived
+filenames are now skipped by name rather than by trusting the caller's glob.
+
+**`groupby.apply(lambda)` over 660k groups is 880× slower than an aggregated
+column**, and accumulating the result across 1,461 days as pandas Series never
+finished at all. Dense numpy accumulation over the bounded key space took the
+seasonal build from **8.7 hours to 36 seconds**.
+
+**macOS `cron` skips jobs while the machine sleeps** and never catches up. Two
+days of roadwork history — which Caltrans does not publish retrospectively — were
+lost before this was noticed. Everything scheduled now runs under `launchd`.
+
 ---
 
 ## Layout
@@ -194,36 +410,50 @@ collector/
   lcs_snapshot.py       Caltrans roadwork, daily snapshot (no history published)
   venue_events.py       venue calendars, live + Wayback replay
   sports_api.py         MLB StatsAPI, NHL API
-  weather.py            Open-Meteo archived forecasts
-  events_normalize.py   dedupe, junk filter, time recovery
+  weather.py            Open-Meteo: archived forecast, live forecast, grid mode
+  events_normalize.py   dedupe, junk and cancellation filter, time recovery
   merge_league_times.py fill event times from league APIs
 forecast/
   corridors.py          corridor + venue registry, travel-time primitive
-  backfill.py           stream-and-discard: PeMS → corridor Parquet
-  baseline.py           seasonal median + rolling-origin backtest
-  enhanced.py           layered corrections + error attribution
-site/                   (open)
+  backfill.py           corridor-level stream-and-discard
+  backfill_stations.py  network-level stream-and-discard
+  build_seasonal.py     the (detector, weekday, slot) profile, both variants
+  features_stations.py  network-scale feature assembly
+  train_stations.py     LightGBM + spatial/temporal holdout report
+  validate_routes.py    scores the model in minutes, on real corridors
+  predict_network.py    nightly batch over the whole horizon
+  matching.py           route polyline → detectors, direction-aware
+  surface.py            the spread model for local streets
+  route.py              origin/destination → minutes
+site/
+  build_data.py         forecast table → the two JSON files the browser reads
+  server.py             stdlib server for /api/route and /api/profile
+  index.html app.js     map, week grid, route planner
+  accuracy.html         the scores, from the same JSON the model wrote
+scripts/nightly.sh      one full run, invoked by launchd at 03:20
 ```
 
 ### Storage
 
-Files, no database. 69 MB total.
+Files, no database. ~1.5 GB, nearly all of it the detector archive.
 
 | Data | Format | Size |
 |---|---|---|
-| Traffic | Parquet, one file per day, `year=YYYY/` | 64 MB |
-| Weather | single Parquet | 2.2 MB |
+| Traffic, all detectors | Parquet, one file per day | 1.4 GB |
+| Traffic, nine corridors | Parquet, one file per day | 64 MB |
+| Seasonal profiles | Parquet | 31 MB × 2 |
+| Weather | Parquet | 7.4 MB |
 | Events | JSONL | 1.1 MB |
-| Roadwork | gzipped JSON per day | 96 KB |
+| Roadwork | gzipped JSON per day | 200 KB |
+| Serving forecast | Parquet | 12 MB |
 
-Postgres would be overhead: append-only daily writes, one reader, 69 MB.
-DuckDB reads the same files if it ever outgrows pandas.
+Postgres would be overhead: append-only daily writes, one reader. DuckDB reads
+the same files if it ever outgrows pandas.
 
 **Stream-and-discard.** PeMS ships ~29 MB per district-day with no server-side
-station filter, so every corridor-day requires downloading the whole file. But
-660k mainline rows reduce to 288 intervals × 9 corridors — **31 KB**. The backfill
-fetches a day, reduces it, writes the result, deletes the raw file. Peak disk is
-one file instead of 156 GB.
+detector filter, so every day requires downloading the whole file. The backfill
+fetches a day, reduces it, writes the result, and deletes the raw file. Peak
+disk is one file instead of 156 GB.
 
 ---
 
@@ -240,37 +470,40 @@ EOF
 chmod 600 ~/.pems_env
 set -a; . ~/.pems_env; set +a
 
-python -m forecast.backfill --years 2026 2025 2024 2023 2022 2021 --out ~/traffic-data/corridors
-python -m collector.weather --start 2022-01-01 --end 2026-08-15 --out ~/traffic-data/weather
-python -m collector.venue_events --live    --out ~/traffic-data/events
-python -m collector.venue_events --wayback --from 2022 --to 2026 --out ~/traffic-data/events
-python -m collector.events_normalize --inputs ~/traffic-data/events/events_*.jsonl \
-    --out ~/traffic-data/events/events_clean.jsonl
-python -m collector.merge_league_times --events ~/traffic-data/events/events_clean.jsonl \
-    --out ~/traffic-data/events/events_merged.jsonl
+# one-time: the routing graph (needs Docker and a Bay Area OSM extract)
+make osrm
 
-python -m forecast.baseline --data ~/traffic-data/corridors
-python -m forecast.enhanced --data ~/traffic-data/corridors
+# the pipeline
+make seasonal      # both profiles, ~40 s each
+make train         # LightGBM on 9.5M detector readings, ~2 min on CPU
+make validate      # score it in minutes on the nine corridors
+make serve-data    # predict the horizon, rebuild the site JSON
+make site          # http://localhost:8000
 ```
 
-Roadwork must run daily — Caltrans publishes only current state, so the archive
-exists only from the day collection starts:
+Nightly, under `launchd` (not `cron` — cron skips jobs while the machine sleeps
+and never catches up):
 
 ```
-5 3 * * * cd /path/to/repo && python -m collector.lcs_snapshot --out ~/traffic-data/lcs
+~/Library/LaunchAgents/com.bayforecast.lcs.plist       03:05  roadwork
+~/Library/LaunchAgents/com.bayforecast.nightly.plist   03:20  everything else
 ```
+
+Roadwork gets its own agent on purpose: Caltrans publishes current state only,
+so a day missed is a day that can never be backfilled, and it must not be
+downstream of anything that can fail.
 
 ---
 
-## Planned stack
+## Cost
 
-- **Training** — LightGBM on tabular features. 2.7M rows × ~15 features trains in
-  minutes on CPU. No GPU, no cloud.
-- **Scheduling** — GitHub Actions cron (free, always on; laptop cron misses days
-  when the machine sleeps).
-- **Site** — static HTML regenerated nightly, served from GitHub Pages or
-  Cloudflare Pages. The forecast is a nightly batch, so there is no API to host.
-- **Running cost** — $0.
+| | |
+|---|---|
+| Training | CPU, ~2 minutes. No GPU, no cloud. |
+| Inference | A nightly batch. No hosted model, no API. |
+| Hosting | Static files plus one small routing process. |
+| Data | All free. PeMS needs an account; Open-Meteo and OSM need nothing. |
+| **Running cost** | **$0** |
 
 ---
 
@@ -278,4 +511,6 @@ exists only from the day collection starts:
 
 Traffic and roadwork data courtesy of the California Department of
 Transportation (Caltrans) Performance Measurement System. Weather from
-[Open-Meteo](https://open-meteo.com/). Neither endorses this project.
+[Open-Meteo](https://open-meteo.com/). Map data © OpenStreetMap contributors,
+tiles © CARTO. Routing by [OSRM](https://project-osrm.org/). None of them
+endorse this project.

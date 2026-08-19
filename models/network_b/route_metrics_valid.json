@@ -1,0 +1,143 @@
+{
+ "overall": {
+  "weighted_baseline_mae": 1.4029394279679428,
+  "weighted_model_mae": 1.2914604931587426,
+  "weighted_baseline_peak": 2.8620524708068475,
+  "weighted_model_peak": 2.4887027077610004,
+  "intervals": 149607,
+  "window": [
+   "2025-01-01",
+   "2025-07-01"
+  ],
+  "gain_pct": 7.946097499780834,
+  "gain_peak_pct": 13.044825937121804
+ },
+ "corridors": [
+  {
+   "corridor": "bay-bridge-wb",
+   "name": "Bay Bridge WB \u2014 Berkeley to SF",
+   "miles": 7.4,
+   "n": 16765,
+   "coverage": 0.55,
+   "mean_minutes": 8.3,
+   "baseline_mae": 0.872,
+   "model_mae": 0.815,
+   "baseline_peak": 1.508,
+   "model_peak": 1.368,
+   "gain_pct": 6.536697247706427,
+   "gain_peak": 9.283819628647208
+  },
+  {
+   "corridor": "bay-bridge-eb",
+   "name": "Bay Bridge EB \u2014 SF to Berkeley",
+   "miles": 7.8,
+   "n": 15808,
+   "coverage": 0.56,
+   "mean_minutes": 8.6,
+   "baseline_mae": 0.789,
+   "model_mae": 0.91,
+   "baseline_peak": 1.72,
+   "model_peak": 2.153,
+   "gain_pct": -15.335868187579212,
+   "gain_peak": -25.174418604651166
+  },
+  {
+   "corridor": "101-nb-peninsula",
+   "name": "US-101 NB \u2014 San Jose to SFO",
+   "miles": 32.3,
+   "n": 16764,
+   "coverage": 0.57,
+   "mean_minutes": 32.2,
+   "baseline_mae": 1.739,
+   "model_mae": 1.526,
+   "baseline_peak": 3.823,
+   "model_peak": 3.078,
+   "gain_pct": 12.248418631397358,
+   "gain_peak": 19.48731362804081
+  },
+  {
+   "corridor": "101-sb-peninsula",
+   "name": "US-101 SB \u2014 SFO to San Jose",
+   "miles": 31.1,
+   "n": 16764,
+   "coverage": 0.53,
+   "mean_minutes": 32.0,
+   "baseline_mae": 1.993,
+   "model_mae": 1.852,
+   "baseline_peak": 4.307,
+   "model_peak": 3.761,
+   "gain_pct": 7.074761665830406,
+   "gain_peak": 12.677037381007667
+  },
+  {
+   "corridor": "880-nb",
+   "name": "I-880 NB \u2014 San Jose to Oakland",
+   "miles": 38.5,
+   "n": 16765,
+   "coverage": 0.7,
+   "mean_minutes": 40.4,
+   "baseline_mae": 2.38,
+   "model_mae": 2.08,
+   "baseline_peak": 4.706,
+   "model_peak": 3.721,
+   "gain_pct": 12.605042016806717,
+   "gain_peak": 20.930726731831708
+  },
+  {
+   "corridor": "880-sb",
+   "name": "I-880 SB \u2014 Oakland to San Jose",
+   "miles": 36.7,
+   "n": 16765,
+   "coverage": 0.73,
+   "mean_minutes": 38.8,
+   "baseline_mae": 2.949,
+   "model_mae": 2.679,
+   "baseline_peak": 6.013,
+   "model_peak": 5.125,
+   "gain_pct": 9.155645981688709,
+   "gain_peak": 14.768002660901377
+  },
+  {
+   "corridor": "580-wb-altamont",
+   "name": "I-580 WB \u2014 Altamont to Dublin",
+   "miles": 14.0,
+   "n": 16763,
+   "coverage": 0.87,
+   "mean_minutes": 13.3,
+   "baseline_mae": 0.485,
+   "model_mae": 0.48,
+   "baseline_peak": 0.772,
+   "model_peak": 0.753,
+   "gain_pct": 1.0309278350515474,
+   "gain_peak": 2.461139896373059
+  },
+  {
+   "corridor": "580-eb-altamont",
+   "name": "I-580 EB \u2014 Dublin to Altamont",
+   "miles": 14.6,
+   "n": 16773,
+   "coverage": 0.85,
+   "mean_minutes": 14.8,
+   "baseline_mae": 0.823,
+   "model_mae": 0.756,
+   "baseline_peak": 1.541,
+   "model_peak": 1.329,
+   "gain_pct": 8.140947752126362,
+   "gain_peak": 13.757300454250485
+  },
+  {
+   "corridor": "237-eb",
+   "name": "SR-237 EB \u2014 Sunnyvale to Milpitas",
+   "miles": 4.5,
+   "n": 16440,
+   "coverage": 0.97,
+   "mean_minutes": 5.0,
+   "baseline_mae": 0.545,
+   "model_mae": 0.488,
+   "baseline_peak": 1.273,
+   "model_peak": 1.064,
+   "gain_pct": 10.458715596330284,
+   "gain_peak": 16.417910447761184
+  }
+ ]
+}

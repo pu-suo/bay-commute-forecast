@@ -1,0 +1,200 @@
+{
+ "rounds": 528,
+ "train_rows": 22366898,
+ "features": [
+  "seasonal_speed",
+  "seasonal_sd",
+  "tod",
+  "dow",
+  "month",
+  "is_weekend",
+  "lanes",
+  "seg_miles",
+  "Latitude",
+  "Longitude",
+  "precip_mm",
+  "wind_kmh",
+  "precip_3h",
+  "hours_since_event",
+  "event_capacity",
+  "event_miles",
+  "freeway",
+  "direction",
+  "holiday_class",
+  "wx_class"
+ ],
+ "categories": {
+  "freeway": [
+   "1",
+   "4",
+   "12",
+   "17",
+   "24",
+   "25",
+   "29",
+   "37",
+   "80",
+   "84",
+   "85",
+   "87",
+   "92",
+   "101",
+   "152",
+   "237",
+   "238",
+   "242",
+   "280",
+   "580",
+   "680",
+   "780",
+   "880",
+   "980"
+  ],
+  "direction": [
+   "E",
+   "N",
+   "S",
+   "W"
+  ],
+  "holiday_class": [
+   "adjacent",
+   "holiday",
+   "none"
+  ],
+  "wx_class": [
+   "dry",
+   "rain_heavy",
+   "rain_light"
+  ]
+ },
+ "slices": [
+  {
+   "stations": "seen",
+   "slice": "all",
+   "n": 1685219,
+   "baseline_mph": 3.048142910003662,
+   "model_mph": 2.864477607005507,
+   "gain_pct": 6.025482020393011
+  },
+  {
+   "stations": "seen",
+   "slice": "peak",
+   "n": 490440,
+   "baseline_mph": 4.625108242034912,
+   "model_mph": 4.294926779235483,
+   "gain_pct": 7.138891578765719
+  },
+  {
+   "stations": "seen",
+   "slice": "congested",
+   "n": 46721,
+   "baseline_mph": 11.594376564025879,
+   "model_mph": 9.932227192800553,
+   "gain_pct": 14.335823595574013
+  },
+  {
+   "stations": "seen",
+   "slice": "peak+congested",
+   "n": 41091,
+   "baseline_mph": 11.504498481750488,
+   "model_mph": 9.823589035794475,
+   "gain_pct": 14.610888502635982
+  },
+  {
+   "stations": "seen",
+   "slice": "holiday",
+   "n": 152721,
+   "baseline_mph": 3.532724380493164,
+   "model_mph": 2.9313402830387623,
+   "gain_pct": 17.02323851742007
+  },
+  {
+   "stations": "seen",
+   "slice": "rain",
+   "n": 39182,
+   "baseline_mph": 3.967381477355957,
+   "model_mph": 3.505360665157848,
+   "gain_pct": 11.645484933453405
+  },
+  {
+   "stations": "seen",
+   "slice": "near event",
+   "n": 34370,
+   "baseline_mph": 3.888671875,
+   "model_mph": 3.690559205637208,
+   "gain_pct": 5.094610081052208
+  },
+  {
+   "stations": "seen",
+   "slice": "worst 5%",
+   "n": 84261,
+   "baseline_mph": 20.307567596435547,
+   "model_mph": 19.51660263291074,
+   "gain_pct": 3.894927148555399
+  },
+  {
+   "stations": "unseen",
+   "slice": "all",
+   "n": 707294,
+   "baseline_mph": 2.874061107635498,
+   "model_mph": 2.6762778738050725,
+   "gain_pct": 6.881664182608232
+  },
+  {
+   "stations": "unseen",
+   "slice": "peak",
+   "n": 205698,
+   "baseline_mph": 4.425305366516113,
+   "model_mph": 4.096258880794218,
+   "gain_pct": 7.43556564958459
+  },
+  {
+   "stations": "unseen",
+   "slice": "congested",
+   "n": 17206,
+   "baseline_mph": 13.148380279541016,
+   "model_mph": 11.408085118821088,
+   "gain_pct": 13.2358140221107
+  },
+  {
+   "stations": "unseen",
+   "slice": "peak+congested",
+   "n": 12865,
+   "baseline_mph": 13.390597343444824,
+   "model_mph": 11.316720480271957,
+   "gain_pct": 15.487560487270596
+  },
+  {
+   "stations": "unseen",
+   "slice": "holiday",
+   "n": 65404,
+   "baseline_mph": 3.3965721130371094,
+   "model_mph": 2.761909852807939,
+   "gain_pct": 18.685375699610127
+  },
+  {
+   "stations": "unseen",
+   "slice": "rain",
+   "n": 17509,
+   "baseline_mph": 3.5062687397003174,
+   "model_mph": 3.1679557317662805,
+   "gain_pct": 9.648804271715711
+  },
+  {
+   "stations": "unseen",
+   "slice": "near event",
+   "n": 8451,
+   "baseline_mph": 3.9373748302459717,
+   "model_mph": 3.6237017807638887,
+   "gain_pct": 7.966552919283214
+  },
+  {
+   "stations": "unseen",
+   "slice": "worst 5%",
+   "n": 35365,
+   "baseline_mph": 20.02984619140625,
+   "model_mph": 18.943392151750274,
+   "gain_pct": 5.424175649047751
+  }
+ ]
+}

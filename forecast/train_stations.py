@@ -37,8 +37,9 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from forecast.features_stations import (           # noqa: E402
-    NUMERIC, CATEGORICAL, TARGET, attach_calendar, attach_events,
-    attach_station_attrs, attach_weather, sample_rows, split_stations)
+    CATEGORICAL, HOLIDAY_CLASSES, NUMERIC, TARGET, WX_CLASSES, attach_calendar,
+    attach_events, attach_station_attrs, attach_weather, sample_rows,
+    split_stations)
 
 logger = logging.getLogger("train_stations")
 
@@ -79,10 +80,19 @@ def load(data_dir, seasonal, meta, weather_dir, events_path,
     return df
 
 
+FIXED_VOCAB = {"wx_class": WX_CLASSES, "holiday_class": HOLIDAY_CLASSES}
+
+
 def align_categories(frames):
-    """Categories must match across train/valid/test or LightGBM sees different codes."""
+    """
+    Categories must match across train/valid/test or LightGBM sees different codes.
+
+    Classes with a fixed vocabulary are unioned in even when no frame contains
+    them, so the model always has a slot for a value that serving can produce.
+    """
     for c in CATEGORICAL:
-        cats = sorted(set().union(*[set(f[c].cat.categories) for f in frames if len(f)]))
+        cats = set().union(*[set(f[c].cat.categories) for f in frames if len(f)])
+        cats = sorted(cats | set(FIXED_VOCAB.get(c, ())))
         for f in frames:
             if len(f):
                 f[c] = f[c].cat.set_categories(cats)

@@ -3,5 +3,6 @@ numpy>=1.24
 pyarrow>=14.0
 requests>=2.31
 holidays>=0.40
-# model training (not yet wired in)
 lightgbm>=4.0
+# Routing is an external service, not a Python package: OSRM runs in Docker on
+# :5001 from a Bay Area OSM extract. See `make osrm`.

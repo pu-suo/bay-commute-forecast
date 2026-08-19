@@ -56,6 +56,9 @@ def main(argv=None):
     p.add_argument("--serve", default="~/traffic-data/serve")
     p.add_argument("--data", default="~/traffic-data/stations")
     p.add_argument("--events", default="~/traffic-data/events/events_merged.jsonl")
+    p.add_argument("--models", default="models/network",
+                   help="metrics are copied next to the data so the accuracy "
+                        "page is served from the same static directory")
     p.add_argument("--out", default="site/data")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
@@ -174,6 +177,17 @@ def main(argv=None):
                   separators=(",", ":"))
     logger.info("corridors.json: %d corridors, %d upcoming events",
                 len(corridors), len(events))
+
+    # The accuracy page is the product's central claim, so its inputs travel
+    # with the site rather than being re-derived by the browser.
+    import shutil
+    for name in ("metrics.json", "route_metrics.json"):
+        src = os.path.join(a.models, name)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(out, name))
+            logger.info("copied %s", name)
+        else:
+            logger.warning("missing %s -- accuracy page will show a gap", src)
     return 0
 
 

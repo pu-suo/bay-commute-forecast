@@ -110,7 +110,8 @@ def main(argv=None):
     p.add_argument("--end", default="2026-08-01")
     p.add_argument("--every-nth", type=int, default=3, help="3 -> 15-minute intervals")
     p.add_argument("--min-coverage", type=float, default=0.80,
-                   help="drop intervals where less than this share of the corridor reports")
+                   help="RELATIVE to the corridor's own median coverage, not "
+                        "absolute; see the note at the filter")
     p.add_argument("--out", default="models/network/route_metrics.json")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
@@ -163,20 +164,38 @@ def main(argv=None):
         base, _ = compose(piv["seasonal_speed"][order], w, tot)
         pred, _ = compose(piv["pred"][order], w, tot)
 
-        ok = np.isfinite(actual) & np.isfinite(base) & np.isfinite(pred) & (cov >= a.min_coverage)
+        # Coverage is nearly constant within a corridor -- the same detectors
+        # report all year and the rest never do -- so an ABSOLUTE threshold does
+        # not select good intervals, it deletes whole corridors. The Bay Bridge
+        # runs at 0.50 coverage every hour of every day; at a 0.80 cut it simply
+        # vanishes from the report, which reads as "no data" rather than as
+        # "threshold chosen badly". This is the `pct_observed` trap wearing a
+        # different hat.
+        #
+        # So the threshold is relative to the corridor's own median, which
+        # catches real outages and keeps the structural gaps, and the scaling in
+        # compose() handles the rest. Actual, baseline and prediction all pass
+        # through the same detectors and the same scaling, so the comparison is
+        # unaffected either way -- only the absolute minutes shift.
+        med_cov = float(np.nanmedian(cov))
+        ok = (np.isfinite(actual) & np.isfinite(base) & np.isfinite(pred)
+              & (cov >= a.min_coverage * med_cov))
         if ok.sum() == 0:
             continue
         idx = piv["speed"].index[ok]
         hour = idx.hour
         peak = ((hour >= 7) & (hour < 10)) | ((hour >= 15) & (hour < 19))
 
-        def mae(x, y, m=None):
-            m = np.ones(len(x), bool) if m is None else m
-            return float(np.abs(x[ok][m] - y[ok][m]).mean())
+        def mae(x, y, m=None, _ok=ok):
+            # `m` indexes the already-filtered rows, so its default has to be
+            # the filtered length, not the raw one.
+            xs, ys = x[_ok], y[_ok]
+            m = np.ones(len(xs), bool) if m is None else m
+            return float(np.abs(xs[m] - ys[m]).mean())
 
         rows.append({
             "corridor": c.slug, "name": c.name, "miles": round(tot, 1),
-            "n": int(ok.sum()),
+            "n": int(ok.sum()), "coverage": round(med_cov, 2),
             "mean_minutes": round(float(actual[ok].mean()), 1),
             "baseline_mae": round(mae(base, actual), 3),
             "model_mae": round(mae(pred, actual), 3),
@@ -188,12 +207,13 @@ def main(argv=None):
     rep["gain_pct"] = (rep["baseline_mae"] - rep["model_mae"]) / rep["baseline_mae"] * 100
     rep["gain_peak"] = (rep["baseline_peak"] - rep["model_peak"]) / rep["baseline_peak"] * 100
 
-    logger.info("\n%-34s%7s%9s%9s%8s%9s%9s%8s", "corridor", "mi", "mean", "base",
-                "model", "gain", "pk base", "pk model")
+    logger.info("\n%-20s%7s%6s%8s%9s%8s%8s%9s%9s%8s", "corridor", "mi", "cov",
+                "n", "mean", "base", "model", "gain", "pk base", "pk gain")
     for _, r in rep.iterrows():
-        logger.info("%-34s%7.1f%9.1f%9.3f%8.3f%8.1f%%%9.3f%8.3f",
-                    r["corridor"], r["miles"], r["mean_minutes"], r["baseline_mae"],
-                    r["model_mae"], r["gain_pct"], r["baseline_peak"], r["model_peak"])
+        logger.info("%-20s%7.1f%5.0f%%%8s%9.1f%8.3f%8.3f%8.1f%%%9.3f%7.1f%%",
+                    r["corridor"], r["miles"], r["coverage"] * 100,
+                    f"{int(r['n']):,}", r["mean_minutes"], r["baseline_mae"],
+                    r["model_mae"], r["gain_pct"], r["baseline_peak"], r["gain_peak"])
 
     wsum = rep["n"].to_numpy()
     overall = {
