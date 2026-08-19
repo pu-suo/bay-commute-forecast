@@ -235,7 +235,7 @@ know that. Optimising and selecting on the training loss would have shipped the
 worse product.
 
 **A is shipped**, selected on route MAE over the validation window. The test
-window was scored once, afterwards. B's numbers are kept in
+window was scored once, afterwards. B's metrics are kept in
 `models/network_b/` as the record of the comparison.
 
 ---
