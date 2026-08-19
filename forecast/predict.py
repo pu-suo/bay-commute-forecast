@@ -9,7 +9,7 @@ feature must be computable for a date that has not happened yet:
   calendar               deterministic
   yday_residual          from the most recent completed day. PeMS runs a day
                          behind, so "yesterday" is genuinely the freshest actual
-                         available — which is fine, because this predicts
+                         available, which is fine because this predicts
                          tomorrow, not now.
   weather                Open-Meteo *Forecast* API, not the archive
   events                 the live venue crawl
@@ -190,7 +190,7 @@ def add_events(df, events_path):
         df.loc[sub[active], "event_label"] = labels[use][active]
         # The label is for humans, so it must name events happening on *that*
         # day. The feature window runs six hours past the start, so a Saturday
-        # evening event stays active into Sunday's small hours — correct for the
+        # evening event stays active into Sunday's small hours, correct for the
         # model, wrong on a page that would then claim Sunday has a game.
         start_dates = np.array([r[0].date() for r in recs], dtype=object)
         same_day = np.zeros(len(sub), dtype=bool)

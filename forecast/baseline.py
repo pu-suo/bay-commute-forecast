@@ -4,7 +4,7 @@ T0 seasonal baseline forecaster, and an honest rolling-origin backtest.
 
 The baseline predicts corridor travel time from the median of the last K
 occurrences of the same (corridor, weekday, time-of-day). Traffic is highly
-regular, so this is a strong forecaster and the bar any model has to clear —
+regular, so this is a strong forecaster and the bar any model has to clear.
 publishing a fancy model that loses to it would be worse than shipping nothing.
 
 The backtest is rolling-origin: predicting day D uses only observations
@@ -64,7 +64,7 @@ def backtest(df, test_start, test_end, lookback_weeks=LOOKBACK_WEEKS):
 
     For each target row the prediction is the median of the same
     (corridor, weekday, time-of-day) over the preceding `lookback_weeks`
-    occurrences — all strictly earlier than the target date.
+    occurrences, all strictly earlier than the target date.
 
     Reference models, both also causal:
       last_week   the same slot exactly 7 days earlier
@@ -92,7 +92,7 @@ def backtest(df, test_start, test_end, lookback_weeks=LOOKBACK_WEEKS):
             & df["pred_seasonal"].notna())
     test = df[mask]
     if test.empty:
-        raise ValueError("no test rows — check the date range")
+        raise ValueError("no test rows; check the date range")
 
     rows = []
     for corridor, sub in test.groupby("corridor"):

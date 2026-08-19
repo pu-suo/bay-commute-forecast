@@ -1,26 +1,23 @@
 # forecast/features_stations.py
 """
-Feature assembly at network scale — all 2,291 stations rather than nine corridors.
+Feature assembly at network scale: all 2,291 detectors rather than nine corridors.
 
-The corridor pipeline loads everything into pandas. That does not survive the
-jump to 1.35 billion station-intervals, so two things change:
+Two things differ from the corridor pipeline, which loads everything into pandas
+and does not survive 1.35 billion detector-intervals.
 
-1. STATION IS NOT A CATEGORICAL. The corridor model used `corridor` as a
-   category, which cannot generalise to a station it never saw. Here the model
-   is given station *attributes* instead — freeway, direction, lane count, and
-   the station's own seasonal median, which carries its typical level. That
-   means it can be trained on a sample of stations and applied to all of them,
-   which is the only affordable way to cover the network.
+Detector is not a categorical. The corridor model used `corridor` as a category,
+which cannot generalise to one it never saw. Here the model gets detector
+attributes instead: freeway, direction, lane count, position, and the detector's
+own seasonal profile. That is what allows training on a sample and serving all
+of them.
 
-2. THE SEASONAL TABLE IS PRECOMPUTED AND SMALL. Rather than a rolling window
-   over every row, the median and sd per (station, weekday, time-of-day) are
-   accumulated streaming across files into a 4.6M-row lookup. Crucially it is
-   fitted on the TRAINING period only and applied forward, which is both causal
-   with respect to the test set and exactly what a production system does:
-   fit the seasonal profile on history, then serve it.
+The seasonal table is precomputed and small. Median and sd per (detector,
+weekday, slot) are accumulated streaming into a 4M-row lookup, fitted on the
+training period only and applied forward, which is both causal and what a
+production job does.
 
-Row sampling happens after the lookup is built, so sampling never corrupts the
-statistics the way sampling before a rolling computation would.
+Row sampling happens after the lookup is built, so it cannot corrupt the
+statistics.
 """
 import glob
 import logging

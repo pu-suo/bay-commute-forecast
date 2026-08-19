@@ -1,27 +1,20 @@
 # forecast/train_stations.py
 """
-Train the network-scale speed model: every mainline station, not nine corridors.
+Train the network-scale speed model.
 
-The corridor model answers "how long is this one drive". This one answers "how
-fast will this sensor read", which composes into any route the user asks for.
-That change forces three things the corridor model never had to face.
+The corridor model answers "how long is this drive". This one answers "how fast
+will this detector read", which composes into any route. Three consequences:
 
-STATION IS NOT A CATEGORICAL. 2,291 stations cannot each get a learned
-embedding from a sampled training set, and a category the model never saw is
-useless at serve time. The model is handed station *attributes* -- freeway,
-direction, lane count, position, segment length -- plus that station's own
-seasonal profile, and has to work from those. That is what makes it legal to
-train on a fraction of the network and serve all of it.
+Detector attributes, not identity. 2,291 detectors cannot each get an embedding
+from a sampled training set, and a category the model never saw is useless at
+serve time.
 
-THE HOLDOUT IS SPATIAL AS WELL AS TEMPORAL. A temporal split alone cannot
-detect station memorisation, because every station sits on both sides of it.
-30% of stations are withheld entirely; the test report scores seen and unseen
-stations separately, and the gap between them is the honest measure of whether
-the sampling story holds.
+The holdout is spatial as well as temporal. A temporal split cannot detect
+detector memorisation, because every detector sits on both sides of it. 30% are
+withheld entirely and scored separately.
 
-THE BASELINE IS FITTED ON HISTORY AND APPLIED FORWARD. The seasonal table comes
-from training-period days only, exactly as a nightly production job would build
-it. It is not recomputed over the test window, which would leak.
+The seasonal baseline is fitted on training days only and applied forward, not
+recomputed over the test window.
 
     python -m forecast.train_stations --out models/network
 """

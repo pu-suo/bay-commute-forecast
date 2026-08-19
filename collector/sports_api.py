@@ -1,30 +1,18 @@
 # collector/sports_api.py
 """
-Official league schedule APIs — the reliable source of event *start times*.
+League schedule APIs, used for event start times.
 
-Venue calendars give reliable dates but are inconsistent about times: Shoreline
-and Stanford publish them, Levi's and Oakland Arena don't. Start time is not
-optional here. A measured 49ers home game moved SR-237 East by +20 min, but the
-spike lands at 17:55 for an afternoon kickoff and 21:35 for a night one, so a
-date-only event cannot place its own effect.
+Venue calendars are reliable for dates and inconsistent for times. Time matters:
+a 49ers home game moves SR-237 East by about +20 min, but the spike lands at
+17:55 for an afternoon kickoff and 21:35 for a night one, so a date-only event
+cannot place its own effect.
 
-Where a league publishes a free API, prefer it over the venue page: it carries
-exact kickoff times, an unambiguous venue name for home/away filtering, and
-years of history.
+Working, free, no key:
+    MLB StatsAPI          statsapi.mlb.com   Giants at Oracle Park
+    NHL                   api-web.nhle.com   Sharks at SAP Center
 
-Verified working 2026-08-15:
-    MLB  statsapi.mlb.com          -> Oracle Park       (times, venue, history)
-    NHL  api-web.nhle.com          -> SAP Center        (times, venue, history)
-
-Verified NOT usable:
-    ESPN site.api.espn.com         -> HTTP 403, Akamai block
-    TheSportsDB                    -> HTTP 503
-
-Still unsolved: **NFL**, which is the league that matters most here because
-Levi's Stadium is the only venue with a confirmed large traffic effect. The
-Levi's calendar supplies game dates; kickoff times need another source, and
-Wikipedia season pages are the most likely fallback since they tabulate them.
-Until that is closed, Levi's NFL events carry has_time=False.
+Checked and unusable: ESPN (403), pro-football-reference (403), TheSportsDB
+(503), Wikipedia (no time column).
 """
 import gzip
 import json

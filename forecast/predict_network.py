@@ -1,23 +1,19 @@
 # forecast/predict_network.py
 """
-Nightly batch: predict every station's speed for every slot in the horizon.
+Nightly batch: predict every detector's speed for every slot in the horizon.
 
-The product is a day-ahead forecast, so there is nothing to serve on demand --
-the whole forecast is knowable the night before. That turns what would be a
-hosted inference API into a table:
+A day-ahead forecast is knowable the night before, so there is nothing to serve
+on demand. That turns a hosted inference API into a table:
 
-    station x timestamp -> mph        2,291 x 7 days x 96 slots = 1.5M rows
+    detector x timestamp -> mph    2,291 x 7 days x 96 slots = 1.5M rows
 
-which is a few megabytes of Parquet, costs nothing to host, cannot fall over
-under load, and makes a route query a dictionary lookup instead of a model call.
-Every architectural simplification downstream follows from the horizon.
+which is a few megabytes of Parquet, costs nothing to host, and makes a route
+query a dictionary lookup.
 
-Features must be assembled EXACTLY as training assembled them, from the same
-functions, or the model receives inputs it has never seen and fails quietly. The
-one legitimate difference is the weather source: training used the archived
-*forecast* and serving uses the live forecast, which is the same kind of object
-measured the same way. That parity was the point of choosing the archived
-forecast API over ERA5 in the first place.
+Features must be assembled by the same functions training used, or the model
+receives inputs it has never seen and fails quietly. The one legitimate
+difference is the weather source: training used the archived forecast, serving
+uses the live forecast, which is the same kind of object.
 
     python -m forecast.predict_network --days 7 --out ~/traffic-data/serve
 """
@@ -93,9 +89,9 @@ def main(argv=None):
     df = attach_weather(df, a.weather, name=a.weather_name)
     df = attach_events(df, a.events)
 
-    # Categories must be the model's own, in the model's own order: LightGBM
-    # stores category *codes*, so a frame that happens to contain a different
-    # set of freeways would silently renumber them.
+    # Categories must be the model's own, in the model's own order. LightGBM
+    # stores category codes, so a frame containing a different set of freeways
+    # would renumber them.
     import json
     meta_path = os.path.join(os.path.dirname(os.path.expanduser(a.model)), "metrics.json")
     cats = json.load(open(meta_path))["categories"]
@@ -103,9 +99,9 @@ def main(argv=None):
         vals = df[c].astype(str)
         unknown = ~vals.isin(cats[c])
         if unknown.any():
-            # A value the model never saw becomes NaN, which LightGBM handles as
-            # a missing category -- acceptable, but it must be visible. Silent
-            # NaN here is how a whole freeway quietly loses its identity.
+            # A value the model never saw becomes NaN, which LightGBM treats as
+            # a missing category. Acceptable, but log it: this is how a whole
+            # freeway loses its identity without anything failing.
             logger.warning("%s: %s rows carry a category the model never saw (%s)",
                            c, f"{int(unknown.sum()):,}",
                            ", ".join(sorted(vals[unknown].unique())[:6]))

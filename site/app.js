@@ -1,15 +1,12 @@
 // site/app.js
 //
-// The map draws two different kinds of claim and must never let them look
-// alike. Freeway centrelines are a forecast from a detector standing on that
-// stretch of road: thick, opaque, scored on the accuracy page. Side streets are
-// an inference from whatever freeway runs nearby: thin, translucent, and
-// switchable, so the contribution of the spread model can be seen rather than
-// taken on trust.
+// The map draws two kinds of claim and keeps them visually distinct. Freeway
+// centrelines are a forecast from a detector on that stretch of road: thick,
+// opaque, scored on the accuracy page. Side streets are inferred from whatever
+// freeway runs nearby: thin, translucent, and switchable.
 //
-// Everything is coloured from the per-detector speed series, not from baked-in
-// colours, which is what keeps the week scrubber instant: moving a slot is an
-// arithmetic pass over ~60k ways, not a refetch.
+// Colours are computed from the per-detector speed series rather than baked in,
+// so moving the scrubber is an arithmetic pass over ~60k ways, not a refetch.
 
 const SCALE = [
   [0.95, '#1f9d84'],
@@ -166,7 +163,7 @@ function renderWeek(slug) {
     for (let h = 0; h < 24; h++) {
       const v = byDay.get(key)[h];
       html += `<td style="background:${v == null ? 'transparent' : colourFor(base / v)}"
-                   title="${v == null ? '' : `${wd} ${h}:00 — ${v.toFixed(0)} min`}"></td>`;
+                   title="${v == null ? '' : `${wd} ${h}:00 · ${v.toFixed(0)} min`}"></td>`;
     }
     html += '</tr>';
   }
@@ -182,9 +179,8 @@ function renderEvents() {
 }
 
 // ---- place search -----------------------------------------------------------
-// Typing a place is the point; typing coordinates was never something a person
-// wanted to do. The field still accepts a pasted "lat,lon" because the server
-// short-circuits that without a network call.
+// The field also accepts a pasted "lat,lon"; the server short-circuits that
+// without a network call.
 function attachSearch(which) {
   const input = $(which), list = $(which + 'List');
   let timer = null, results = [], active = -1;
@@ -194,7 +190,7 @@ function attachSearch(which) {
     const r = results[i];
     if (!r) return;
     state.points[which] = [r.lat, r.lon];
-    input.value = r.name + (r.address ? ` — ${r.address}` : '');
+    input.value = r.name + (r.address ? `, ${r.address}` : '');
     close();
     dropPin(which);
     if (state.points.from && state.points.to) fitPins();
@@ -281,7 +277,7 @@ async function forecastRoute() {
   const a = state.points.from, b = state.points.to;
   if (!a || !b) {
     $('answer').classList.add('on');
-    $('caveat').textContent = 'Pick a start and an end — search for a place or click the map.';
+    $('caveat').textContent = 'Pick a start and an end: search for a place, or click the map.';
     return;
   }
   const when = `${$('day').value}T${$('time').value}:00`;
@@ -320,7 +316,7 @@ function showRoute(data) {
   $('keyE').textContent =
     `${s.surface_minutes.toFixed(0)} min inferred · ${s.surface_miles.toFixed(1)} mi`;
   $('caveat').innerHTML = `<b>${Math.round(s.measured_share * 100)}% of this journey is a measured forecast.</b>
-    The rest is surface street, inferred by spreading nearby freeway conditions onto local roads —
+    The rest is surface street, inferred by spreading nearby freeway conditions onto local roads,
     the thin lines on the map. That part has no ground truth and is excluded from the published accuracy.`;
 
   routeLayer.clearLayers();
@@ -402,7 +398,7 @@ function drawProfile(rows) {
   $('day').max = net.slots[net.slots.length - 1].slice(0, 10);
   $('slot').max = net.slots.length - 1;
 
-  // open on the next weekday morning peak — the question the site exists to
+  // open on the next weekday morning peak, the question the site exists to
   // answer, rather than midnight, the least interesting hour of the week
   const peak = net.slots.findIndex(s => {
     const d = new Date(s);

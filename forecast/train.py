@@ -1,26 +1,23 @@
 # forecast/train.py
 """
-Train LightGBM against the seasonal baseline, and report where it actually wins.
+Train LightGBM against the corridor seasonal baseline and report where it wins.
 
-Two target formulations are trained and compared, because the choice is an
-empirical question rather than one worth arguing about:
+Two target formulations are trained and compared:
 
-  minutes   predict travel time directly, with the seasonal median as a feature.
-  ratio     predict actual / seasonal_median, then multiply back.
+  minutes   predict travel time directly, with the seasonal median as a feature
+  ratio     predict actual / seasonal_median, then multiply back
 
-`ratio` exists because corridors differ in scale from 8.6 to 39.3 minutes. Under
+`ratio` exists because corridors range from 8.6 to 39.3 minutes. Under
 absolute-minutes MAE the optimiser cares nine times more about a percentage
-error on 880 than the same percentage error on the Bay Bridge, even though two
-minutes lost on an eight-minute trip is the worse experience. A ratio target is
-scale-free and weights every corridor equally.
+error on I-880 than the same error on the Bay Bridge, though two minutes lost on
+an eight-minute trip is the worse experience.
 
-Split is temporal, never random: training ends before the test window starts.
-A random split on time series leaks the future through neighbouring rows and
-produces numbers that mean nothing.
+Split is temporal. A random split on time series leaks the future through
+neighbouring rows.
 
-Global MAE is reported alongside slices, because global MAE is dominated by
-easy intervals — the median error is 18 seconds — and a model can look flat
-overall while materially improving the cases users actually notice.
+Global MAE is reported alongside slices, because global MAE is dominated by easy
+intervals (median error 18 seconds) and a model can look flat overall while
+improving the cases users notice.
 """
 import argparse
 import json
@@ -145,11 +142,9 @@ def main(argv=None):
         logger.info("%-10s%10s%11.3f%11.3f%11.3f", r["slice"], f"{int(r['n']):,}",
                     r["baseline"], r["minutes"], r["ratio"])
 
-    # Shipping target is chosen deliberately, not by global MAE. The two
-    # formulations tie globally (0.999 each), but `minutes` is clearly better on
-    # holidays and on the worst 5% of intervals — the slices the product exists
-    # to get right. Picking on the global number alone would be a coin flip
-    # that quietly costs accuracy exactly where it matters.
+    # The two formulations tie globally (0.999 each), so the shipping target is
+    # chosen on slices instead: `minutes` is better on holidays and on the worst
+    # 5% of intervals. Picking on the global number would be a coin flip.
     best = a.target
     gain = (report.loc[0, "baseline"] - report.loc[0, best]) / report.loc[0, "baseline"] * 100
     logger.info("\nshipping target: %s   global gain over baseline: %.2f%%", best, gain)

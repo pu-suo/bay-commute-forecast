@@ -1,23 +1,17 @@
 # site/build_data.py
 """
-Turn the nightly forecast table into the two files the browser reads.
-
-The site is static by construction. A day-ahead forecast is fully knowable the
-night before, so there is no query a server needs to answer at page load, and
-the whole map is a file:
+Turn the nightly forecast table into the JSON the browser reads.
 
   network.json    an hourly speed series per detector, plus its free-flow speed
   corridors.json  the nine named commutes, minute-by-minute across the week
 
-Road geometry is NOT here -- it comes from `build_geometry.py`, which reads real
-OSM centrelines. The two are keyed to each other by detector id, so geometry is
-rebuilt only when the road network changes while speeds are rebuilt nightly.
+Road geometry lives in build_geometry.py, keyed to the same detector ids, so
+geometry is rebuilt when the road network changes and speeds are rebuilt
+nightly.
 
-Hourly, not five-minute. The serving table holds 15-minute resolution and the
-route planner uses all of it, but a map that animates across a week needs 168
-frames rather than 672, and the difference is a megabyte the visitor waits on
-for no visual gain. Resolution is a rendering decision here, not a modelling one.
-
+Hourly, not five-minute: the serving table holds 15-minute resolution and the
+route planner uses all of it, but a map animating across a week needs 168 frames
+rather than 672, and the difference is a megabyte for no visual gain.
 """
 import argparse
 import json
@@ -101,10 +95,9 @@ def main(argv=None):
         w = pd.Series(spans, index=ids).reindex(order).to_numpy()
         total_mi = float(np.abs(spans).sum())
 
-        # Missing detectors must never shorten the trip. A sum over whatever
-        # happens to be present reads as free-flowing traffic rather than as
-        # missing data -- the same trap the historical pipeline hit -- so the
-        # covered portion is priced and then scaled up to the full corridor.
+        # A sum over whatever detectors happen to be reporting looks like
+        # free-flowing traffic rather than like missing data. Price the covered
+        # portion, then scale it up to the full corridor length.
         def scaled(matrix):
             mph = matrix.to_numpy()
             ok = np.isfinite(mph) & (mph > 0)

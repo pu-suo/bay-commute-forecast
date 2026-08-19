@@ -1,33 +1,21 @@
 # forecast/matching.py
 """
-Match a route polyline onto the PeMS stations it actually traverses.
+Match a route polyline onto the PeMS detectors it traverses.
 
-The naive version — nearest station within a tolerance — is wrong in a way that
-is easy to miss and doubles every answer: opposing carriageways of a divided
-freeway sit within a couple of hundred feet of each other, so a northbound route
-matches the southbound detectors too. On a Palo Alto to SFO route that produced
-39 northbound and 41 southbound stations, and 134% of the route's own length as
-"instrumented".
+Two tests, not one. Proximity alone matches the opposing carriageway, which sits
+about 200 ft away: on a Palo Alto to SFO route that gave 39 northbound and 41
+southbound detectors, claiming 134% of the route as instrumented. So a detector
+must also be heading-aligned.
 
-So matching is two tests, not one:
+"Heading" is the direction traffic moves, not the letter on the shield. Caltrans
+signs I-580 east/west while it runs north/south through Oakland, and I-80 east
+while it runs due north at Vallejo. 19.4% of detectors sit more than 70 degrees
+from their signed direction. Bearings therefore come from each detector's
+neighbours along its own freeway, flipped for S and W because postmiles count
+the other way.
 
-  proximity   the station is within TOLERANCE_MI of the route line, and
-  heading     the route's local bearing agrees with the station's direction
-              of travel to within MAX_BEARING_DIFF degrees.
-
-"Direction of travel" is NOT the signed direction. Caltrans signs I-580 as
-east/west and it runs north/south through Oakland; I-80 is signed east and runs
-almost due north at Vallejo. Comparing a route's bearing against the compass
-reading of the letter on the shield rejects a correct match on 19.4% of
-detectors -- worst on exactly the freeways a Bay Area commute uses. The bearing
-is therefore derived from each detector's neighbours along its own freeway,
-which is the direction traffic actually moves there.
-
-Stations are then ordered by distance along the route, which is what makes
-time-dependent traversal possible: `forecast.route` accumulates each segment's
-travel time and advances the clock as it goes, so a long trip is evaluated
-against the forecast for the time the driver will actually *be* there rather
-than the time they left.
+Detectors are returned ordered along the route, so forecast.route can walk them
+with the clock advancing.
 """
 import logging
 

@@ -1,18 +1,16 @@
 # forecast/features.py
 """
-Build the modelling feature matrix.
+Build the corridor feature matrix.
 
 Every feature here is causal: computable from information available strictly
-before the day being predicted. That constraint is the whole point of the
-module — it is easy to write a feature that quietly peeks at the target and
-produces beautiful offline numbers that evaporate in production.
+before the day being predicted. That constraint is what the module is for, since
+a feature that peeks at the target produces good offline numbers that evaporate
+in production.
 
-The seasonal median is included as a *feature* rather than treated as a rival.
-It already achieves a median error of 18 seconds, and a model asked to predict
-travel time from scratch would spend nearly all its capacity rediscovering
-corridor x weekday x time-of-day structure it could simply be handed. Given the
-prior, the model can spend its capacity on the ~20% of error that sits in
-identifiable contexts instead.
+The seasonal median is included as a feature rather than treated as a rival. It
+already achieves a median error of 18 seconds, and a model predicting travel
+time from scratch would spend most of its capacity rediscovering corridor x
+weekday x slot structure it could be handed.
 """
 import json
 import logging

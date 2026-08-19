@@ -1,25 +1,24 @@
 # collector/weather.py
 """
-Weather features from Open-Meteo — free, no API key.
+Weather from Open-Meteo. Free, no key.
 
-Three endpoints for three different jobs, and picking the wrong one is the
-classic way to build a model that works offline and fails in production:
+Three endpoints for three jobs, and picking the wrong one produces a model that
+works offline and fails in production:
 
-  Historical Forecast API   the forecast that *was issued* on a past date.
-                            This is what you TRAIN on, because it is the kind
-                            of input the model will actually receive at serve
-                            time. Coverage starts ~2022.
-  Forecast API              tomorrow's forecast. What you SERVE with.
-  Historical Weather (ERA5) what actually happened. Analysis only — training on
-                            it gives the model perfect weather knowledge it will
-                            never have, and the model silently over-relies on it.
+  Historical Forecast   the forecast issued on a past date. Train on this,
+                        because it is the kind of input serving will receive.
+                        Coverage starts 2022.
+  Forecast              tomorrow's forecast. Serve with this.
+  Historical (ERA5)     what actually happened. Analysis only. Training on it
+                        gives the model weather knowledge it will never have.
 
-Corridor midpoints are rounded before deduplication: paired directions on the
-same freeway sit within a few hundred metres of each other, so nine corridors
-collapse to about five distinct weather locations and five times fewer calls.
+Two point sets. Corridor midpoints collapse nine corridors to five locations,
+which is fine for the corridor product. The network spans Gilroy to Ukiah, so
+--grid-step covers occupied grid cells instead: 90 cells in the bounding box, 30
+of which contain a detector.
 
-    python -m collector.weather --start 2022-01-01 --end 2026-08-15 \
-        --out ~/traffic-data/weather
+    python -m collector.weather --start 2022-01-01 --end 2026-08-17 \
+        --grid-step 0.25 --name archived_forecast_grid
 """
 import argparse
 import json
@@ -40,7 +39,7 @@ TIMEZONE = "America/Los_Angeles"
 REQUEST_TIMEOUT = 90
 RETRY_ATTEMPTS = 3
 POLITENESS_SECONDS = 1.5
-# ~2 decimal places is a little over 1 km — well inside a weather grid cell, and
+# ~2 decimal places is a little over 1 km, well inside a weather grid cell and
 # enough to collapse the paired-direction corridors onto one request each.
 COORD_PRECISION = 2
 
@@ -180,8 +179,8 @@ def main(argv=None):
         logger.info("live forecast: %d hourly rows over %d points",
                     len(rows), len(points))
     for (lat, lon), slugs in (() if a.live else points.items()):
-        # chunk by year: one multi-year request is fine for the API but a failure
-        # mid-range would otherwise cost the whole point
+        # chunk by year: the API accepts a multi-year request, but a failure
+        # mid-range would cost every year already fetched
         for year in range(int(a.start[:4]), int(a.end[:4]) + 1):
             s = max(f"{year}-01-01", a.start)
             e = min(f"{year}-12-31", a.end)

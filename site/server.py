@@ -2,20 +2,18 @@
 """
 Local server for the parts of the site that cannot be a static file.
 
-Almost all of it can. The forecast is a nightly batch, so the map, the week
-view and the nine corridors are JSON on disk and would deploy to any static
-host for nothing. What needs a process is routing an arbitrary origin and
-destination: that calls OSRM, matches the polyline to detectors, and prices the
-spans. Two endpoints, standard library only.
+Almost all of it can. The map, week view and corridors are JSON on disk and
+would deploy to any static host. What needs a process is routing an arbitrary
+origin and destination, which calls OSRM, matches the polyline to detectors and
+prices the spans.
 
   GET /api/route?from=lat,lon&to=lat,lon&depart=ISO
-  GET /api/route?from=...&to=...&arrive=ISO      solves for departure time
-  GET /api/profile?from=...&to=...&date=YYYY-MM-DD   travel time all day
-  GET /api/geocode?q=<text>                      address -> lat,lon
+  GET /api/route?from=...&to=...&arrive=ISO       solves for departure time
+  GET /api/profile?from=...&to=...&date=YYYY-MM-DD
+  GET /api/geocode?q=<text>
 
-Everything else is served from site/ as files, gzipped -- the road geometry is
-6 MB of JSON that compresses to 1.3, and shipping it raw over any real network
-would undo the point of precomputing it.
+Everything else is served from site/ as files, gzipped: the road geometry is
+6 MB of JSON that compresses to 1.3.
 
     python site/server.py --port 8000
 """

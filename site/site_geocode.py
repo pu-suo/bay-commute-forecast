@@ -2,21 +2,18 @@
 """
 Turn typed text into a point on the map.
 
-Google Places is the requested provider and the better one -- it understands
-"the ferry building" and "1 Hacker Way" alike, and it ranks by what people
-actually search for. It needs a billed API key, so the module treats the
-provider as a choice rather than a hard dependency:
+Google Places is the better geocoder and needs a billed key, so the provider is
+a choice:
 
   GOOGLE_MAPS_API_KEY set    Google Places Text Search
   otherwise                  Photon, an OSM geocoder that needs no key
 
-The key stays on the server. A browser-side Places call would put it in page
-source where anyone can lift it and spend the account's quota, and restricting
-a key by HTTP referrer does not survive someone copying the page. One proxy
-endpoint is less code than the client library anyway.
+The key stays on the server. A browser-side Places call puts it in page source
+where anyone can lift it, and referrer restrictions do not survive someone
+copying the page.
 
-Results are biased to the Bay Area in both providers, because a commute
-forecast asking about "Springfield" means the one down the road.
+Results are biased to the Bay Area in both providers, and a hit outside the
+forecast area is flagged rather than hidden.
 """
 import json
 import logging

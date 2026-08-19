@@ -1,25 +1,21 @@
 # forecast/route.py
 """
-Origin and destination in, a day-ahead travel time out.
+Origin and destination in, day-ahead travel time out.
 
-This is where the pieces meet. A route is decomposed into spans, each span is
-priced by whatever evidence covers it, and the clock advances across them:
+A route is cut into spans and each span is priced by whatever evidence covers
+it, with the clock advancing across them:
 
-  freeway span   a PeMS detector governs it. Priced from the forecast table --
-                 a real prediction, scored on the accuracy page.
-  surface span   no detector within tolerance. Priced by scaling OSRM's own
-                 free-flow duration by the spread model. An ESTIMATE, labelled
-                 as one everywhere it appears, and excluded from published
-                 accuracy.
+  freeway   a PeMS detector governs it. Priced from the forecast table and
+            scored on the accuracy page.
+  surface   no detector within tolerance. Priced by scaling OSRM's own
+            free-flow duration by the spread model. Labelled as an estimate
+            everywhere it appears and excluded from accuracy figures.
 
-Keeping those two apart is the whole discipline of the module. A single number
-that silently blends a measured forecast with an unvalidated proxy is worse than
-either, because nobody can tell which part failed.
+The two are kept apart throughout. A single number blending a measured forecast
+with an unvalidated proxy leaves nobody able to tell which part failed.
 
-Spans are traversed in order with the clock advancing, so a segment forty
-minutes into a trip is priced at the forecast for the time the driver reaches
-it, not the time they left. On a long peak-hour trip that is the difference
-between the answer and a plausible-looking wrong answer.
+Spans are walked in order, so a segment forty minutes into a trip is priced at
+the forecast for the time the driver reaches it.
 
     python -m forecast.route --from 37.4419,-122.1430 --to 37.6213,-122.3790 \
         --depart "2026-08-19 08:00"
@@ -43,9 +39,8 @@ logger = logging.getLogger("route")
 
 OSRM = os.environ.get("OSRM_URL", "http://localhost:5001")
 # Mainline detectors sit ~0.6 mi apart. A gap much larger than that means the
-# route left the instrumented freeway -- an off-ramp, an arterial, a rural
-# stretch -- and pretending one detector speaks for six miles of surface street
-# is exactly the silent blending this module exists to prevent.
+# route left the instrumented freeway (an off-ramp, an arterial, a rural
+# stretch), and one detector cannot speak for six miles of surface street.
 MAX_FREEWAY_SPAN_MI = 2.5
 SURFACE_RADIUS_MI = 2.0
 SURFACE_MAX_STATIONS = 6
@@ -82,10 +77,10 @@ class Forecast:
         fc = pd.read_parquet(os.path.join(d, "forecast.parquet"))
         self.slot = int(pd.Series(sorted(fc["ts"].unique()[:2]))
                         .diff().dropna().dt.total_seconds().iloc[0] // 60) or 15
-        # Convert through datetime64[s] rather than dividing raw ints: Parquet
+        # Convert through datetime64[s] rather than dividing raw ints. Parquet
         # round-trips these as microseconds while Timestamp.value is always
-        # nanoseconds, so a hand-rolled //10**9 silently keys the two sides a
-        # thousandfold apart and every lookup misses.
+        # nanoseconds, so //10**9 keys the two sides a thousandfold apart and
+        # every lookup misses.
         fc["key"] = (fc["station"].astype(np.int64) * 10 ** 12 +
                      fc["ts"].to_numpy().astype("datetime64[s]").astype(np.int64))
         self.mph = dict(zip(fc["key"], fc["mph"]))

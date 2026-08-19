@@ -1,20 +1,17 @@
 # forecast/build_seasonal.py
 """
-Build the (station, weekday, time-of-day) speed profile that everything else
-leans on.
+Build the (detector, weekday, slot) speed profile.
 
-Two builds exist and they must not be confused:
+Two builds exist and must not be confused:
 
   _seasonal_trainonly.parquet   fitted on days before the evaluation split.
-                                Used by training and by validation, so that
-                                nothing in a scored window can influence the
-                                baseline it is scored against.
-  _seasonal.parquet             fitted on everything up to today. Used by the
-                                nightly serving job, because in production the
-                                right profile is the freshest causal one.
+                                Used by training and validation, so nothing in
+                                a scored window influences its own baseline.
+  _seasonal.parquet             fitted through today. Used by the nightly
+                                serving job, where the freshest causal profile
+                                is the right one.
 
-Writing them to separate files rather than regenerating one in place is what
-keeps a nightly job from silently invalidating a published accuracy figure.
+Separate files stop a nightly job invalidating a published accuracy figure.
 
     python -m forecast.build_seasonal --through 2025-01-01 \
         --out ~/traffic-data/stations/_seasonal_trainonly.parquet

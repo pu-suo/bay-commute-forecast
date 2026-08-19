@@ -2,22 +2,17 @@
 """
 Daily snapshot of the Caltrans Lane Closure System for district 4.
 
-Caltrans publishes only *current* state — there is no historical archive and no
-way to ask for last week's planned closures. The archive therefore only exists
-from the day you start collecting, which is why this runs every day and why it
-was the first thing built.
+Caltrans publishes current state only. There is no historical archive and no way
+to ask for last week's planned closures, so the archive starts the day you start
+collecting and a missed day cannot be recovered. Runs under its own launchd
+agent at 03:05 for that reason.
 
-No authentication and no API key. Run from cron:
+No authentication. Each run writes one gzipped JSON file named for the UTC date,
+so re-running the same day is idempotent.
 
-    5 3 * * *  /path/to/python /path/to/lcs_snapshot.py --out /data/lcs
-
-Each run writes one gzipped JSON file named for the UTC date. Re-running on the
-same day overwrites that day's file, so the job is safely idempotent.
-
-Verified 2026-08-14: 1,456 district-4 records, 854 freeway-relevant, 380
-mainline. 86% future-dated, median lead time 10 days. Every mainline record
-carries begin and end postmiles, which join onto corridor definitions via the
-station metadata's Abs_PM.
+As of 2026-08-14: 1,456 district-4 records, 854 freeway-relevant, 380 mainline,
+86% future-dated with a median lead time of 10 days. Mainline records carry
+begin and end postmiles, which join to corridors via Abs_PM.
 """
 import argparse
 import gzip
@@ -103,7 +98,7 @@ def write_snapshot(payload, out_dir, stamp=None):
     path = os.path.join(out_dir, f"lcs_d04_{stamp:%Y%m%d}.json.gz")
 
     envelope = {
-        # Captured-at is the whole point of the archive: it records what was
+        # Captured-at is why the archive exists: it records what was
         # knowable on this date, which is what point-in-time features need.
         "captured_at_utc": stamp.isoformat(),
         "source_url": FEED_URL,

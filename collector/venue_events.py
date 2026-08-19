@@ -1,30 +1,21 @@
 # collector/venue_events.py
 """
-Venue event calendar crawler — live pages and Wayback backfill.
+Scrape venue event calendars, live and from the Wayback Machine.
 
-One venue calendar carries every event type at that venue. The SAP Center page
-lists "Sharks vs. Bruins", "Bellator" and "Disney On Ice" together, so there is
-no need for separate sports and concert feeds; crawl the venue and you get both.
+Two parsers per venue, because these pages are inconsistent:
 
-Two extraction strategies, tried in order:
+  jsonld  schema.org Event blocks. Exact, carries start time and location.
+  text    pipe-token fallback for pages that render events as prose.
 
-  1. schema.org JSON-LD  — structured, and crucially carries a full ISO
-     startDate *with time of day*. Shoreline publishes this.
-  2. pipe-token text walk — for sites that render events as plain markup.
-     Levi's emits "Aug | 21 | Karol G | ... | BUY TICKETS"; SAP Center emits
-     "Sep. | 10 | , 2026 | Soda Stereo | Event Starts | 8:00 PM".
+Away games are filtered on schema.org `location`: Stanford's calendar advertises
+"Stanford at California", which happens in Berkeley.
 
-Start time matters more than it looks. A measured 49ers game at Levi's moved
-SR-237 East by +20 min, but the spike lands at 17:55 for an afternoon kickoff
-and 21:35 for a night one — a day-level flag cannot place it. Events without a
-parsed time are marked has_time=False so downstream can treat them differently
-rather than silently assuming an afternoon start.
+Times are normalised to local. Stanford publishes UTC (02:30:00Z), Shoreline
+publishes -07:00; unnormalised, every Friday night game lands on Saturday.
 
-The same parsers run against Wayback snapshots, which is how history is
-recovered for sites that publish no archive of their own.
-
-    python -m collector.venue_events --live --out ~/traffic-data/events
-    python -m collector.venue_events --wayback --from 2023 --to 2026 --out ~/traffic-data/events
+Wayback replay recovers history back to 2021, but archived pages only ever show
+the dozen events upcoming that day, so coverage of a long season is partial.
+See merge_league_times for the fix.
 """
 import argparse
 import gzip
@@ -53,7 +44,7 @@ MONTHS = {m: i for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun",
      "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
 
-# Everything downstream — corridor timestamps, kickoff-relative features — is
+# Everything downstream (corridor timestamps, kickoff-relative features) is
 # Bay Area wall-clock. Venues are inconsistent about this: Shoreline publishes
 # "-07:00" offsets while Stanford publishes UTC with a Z suffix, so a raw
 # comparison lands a Friday night kickoff on Saturday morning.
@@ -79,7 +70,7 @@ class Event:
     has_time: bool
     title: str
     source_url: str
-    captured_at: str    # when THIS observation was made — the point-in-time key
+    captured_at: str    # when this observation was made; the point-in-time key
 
 
 def _fetch(url):
@@ -123,7 +114,7 @@ def events_from_jsonld(html, venue=None):
     Pull schema.org Event objects out of any ld+json blocks. Best case.
 
     When the markup declares a location, it is checked against the venue. Team
-    schedule pages list home *and* away fixtures — Stanford's page happily
+    schedule pages list home and away fixtures. Stanford's page happily
     advertises "Stanford at California", which happens in Berkeley. Counting an
     away game as a venue event injects pure noise into the event coefficient,
     so anything whose stated location clearly isn't this venue is dropped.

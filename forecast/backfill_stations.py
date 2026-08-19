@@ -1,21 +1,15 @@
 # forecast/backfill_stations.py
 """
-Station-level backfill: every D4 mainline detector, not just nine corridors.
+Backfill PeMS station_5min at network scale, streaming and discarding.
 
-The corridor backfill throws away 86% of each downloaded file. Routing needs
-arbitrary origin-destination pairs, so it needs every segment — and a "segment"
-here is a PeMS station, which already carries the Length of road it represents.
-Travel time over any route is then the sum of Length/speed over the stations the
-route traverses, which is exactly how corridor travel time is computed today.
+Same shape as forecast.backfill but keeps every mainline detector instead of
+collapsing to nine corridors. One file per day:
 
-Same download as the corridor backfill; only the reduce differs. Storage is kept
-tight because 2,291 stations x 288 intervals x 2,050 days is 1.35B rows if you
-are careless with dtypes:
+    station int32 | tod int16 | speed float32 | pct_observed int8
 
-    station  int32     tod  int16     speed  float32     pct_observed  int8
-
-Sorted by station then tod so Parquet's dictionary and delta encodings have
-something to work with.
+zstd, about 740 KB a day, 1.4 GB for 2021-2026. PeMS ships ~29 MB per
+district-day with no server-side filter, so each day is downloaded whole,
+reduced, written, and deleted. Peak disk is one file rather than 156 GB.
 """
 import argparse, logging, os, sys, time, traceback
 from datetime import datetime

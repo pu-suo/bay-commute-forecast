@@ -21,7 +21,7 @@ Layers, in the order the residual analysis said they matter:
             2x the normal error and, with their adjacent travel days, carry
             about 15% of all error.
   event     venue events, bucketed by hours since start. Large where they
-            apply and rare enough to be invisible in a global average — the
+            apply and rare enough to be invisible in a global average. The
             attribution below reports both so neither number misleads.
   weather   rain and wind, from *archived forecasts* rather than observations,
             so training input matches what serving will actually have.
@@ -106,7 +106,7 @@ def add_event_features(df, events_path):
 def add_weather_features(df, weather_dir):
     path = os.path.join(os.path.expanduser(weather_dir), "archived_forecast.parquet")
     if not os.path.exists(path):
-        logger.warning("no weather at %s — skipping weather layer", path)
+        logger.warning("no weather at %s, skipping weather layer", path)
         df["wx_class"] = "unknown"
         return df, False
 
@@ -123,8 +123,8 @@ def add_weather_features(df, weather_dir):
     joined = df.join(grid, on=["key", "hour"])
 
     # "no row in the weather archive" is NOT "it did not rain". The archive
-    # starts ~2022, so filling nulls with zero silently asserts that 2021 was
-    # permanently dry — 15% of the corpus, and a model trained on it would learn
+    # starts ~2022, so filling nulls with zero asserts that 2021 was
+    # permanently dry: 15% of the corpus, and a model trained on it would learn
     # exactly that. Missing stays missing.
     precip = joined["precipitation"]
     df["wx_class"] = np.where(precip.isna(), "unknown",

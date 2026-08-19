@@ -2,24 +2,21 @@
 """
 Caltrans PeMS ingestion client.
 
-PeMS publishes no documented API, but its Data Clearinghouse UI is driven by a
-JSON endpoint that is perfectly usable once you hold a session cookie:
+PeMS has no documented API, but the Data Clearinghouse UI is driven by a JSON
+endpoint that works once you hold a session cookie:
 
     GET /?srq=clearinghouse&district_id=<n>&geotag=&yy=<year>
         &type=<dataset>&returnformat=text
 
-That endpoint returns in well under a second, while the equivalent HTML pages
-take 20-30s. Never scrape the UI - list via JSON, then fetch files by id.
+It responds in under a second where the equivalent HTML pages take 20-30s. Note
+that it returns 404, not 401, when unauthenticated.
 
-Credentials come from the environment, never from a file:
+Credentials come from the environment:
 
     export PEMS_USERNAME='you@example.com'
     export PEMS_PASSWORD='...'
 
 Register at https://pems.dot.ca.gov/?dnode=apply (approval takes 1-2 days).
-
-All of the below was verified end-to-end against district 4 on 2026-08-14:
-login, JSON listing, file download, and parsing of both dataset types.
 """
 import gzip
 import json
@@ -207,7 +204,7 @@ STATION_5MIN_COLUMNS = [
 ]
 
 # Only mainline and HOV detectors report speed at all; ramps (OR/FR/FF) are
-# always null, so including them silently halves apparent coverage.
+# always null, so including them halves apparent coverage.
 SPEED_BEARING_LANE_TYPES = ("ML", "HV")
 
 

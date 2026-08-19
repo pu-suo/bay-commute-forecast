@@ -1,26 +1,18 @@
 # collector/merge_league_times.py
 """
-Fill event start times from official league APIs, and add games the crawl missed.
+Fill event start times from league APIs and add home games the crawl missed.
 
-Venue calendars are good at *dates* and inconsistent about *times*. League APIs
-are authoritative for both, and they publish complete seasons rather than the
-dozen upcoming events a calendar page happens to show at snapshot time. So this
-does two jobs, not one:
+Two jobs:
 
-  fill  — a crawled event on a date the league also has a home game gets the
-          league's exact start time.
-  add   — a league home game the crawl never saw at all is inserted. Wayback
-          only ever captured what was on screen that day, so its coverage of a
-          162-game baseball season is inherently partial.
+  fill  a crawled event on a date the league also has a home game takes the
+        league's exact start time.
+  add   a league home game the crawl never saw is inserted. Wayback only
+        captured what was on screen that day, so its coverage of a 162-game
+        season is partial. This added 572 games.
 
-Covers the two venues with usable free APIs:
-    Oracle Park  <- MLB StatsAPI      (Giants)
-    SAP Center   <- api-web.nhle.com  (Sharks)
-
-Levi's Stadium and Oakland Arena remain time-less: the NFL has no free schedule
-API (ESPN 403s, pro-football-reference 403s, TheSportsDB 503s, Wikipedia omits
-kickoff times) and Oakland Arena is mixed-use with no single league behind it.
-Those need the manual override table.
+Covers Oracle Park (MLB StatsAPI) and SAP Center (api-web.nhle.com). Levi's
+Stadium and Oakland Arena stay time-less: no free NFL schedule API exists and
+Oakland Arena has no single league behind it.
 """
 import argparse
 import json
@@ -75,8 +67,8 @@ def merge(events, league, source_tag="league-api"):
             seen_dates[slug].add(e["start"][:10])
             game = league[slug].get(e["start"][:10])
             if game and not e.get("has_time"):
-                # Keep the crawled title — it names the actual event, which for a
-                # mixed-use arena may not be the league fixture — but take the
+                # Keep the crawled title, which names the actual event and for a
+                # mixed-use arena may not be the league fixture, but take the
                 # league's timestamp, which is authoritative.
                 e = {**e, "start": game["start"], "has_time": True,
                      "time_source": source_tag}

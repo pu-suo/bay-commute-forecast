@@ -3,17 +3,17 @@
 Corridor and venue definitions, and the travel-time primitive.
 
 A corridor is an ordered run of mainline detectors along one freeway in one
-direction between two named endpoints. Corridors — not sensors — are the unit
-the product forecasts, because "23 minutes" is what a person understands and
-"54 mph at station 400973" is not.
+direction between two named endpoints. Travel time is the sum of
+segment_length / speed over those detectors.
 
-Travel time across a corridor is the sum of segment_length / speed over its
-stations. Station length and speed both come from station_5min; the ordering
-and postmile bounds come from the station metadata's Abs_PM.
+Postmile bounds were derived by resolving landmarks to their nearest mainline
+detector, then checked for coverage: no corridor has a gap wider than ~2 miles.
 
-Postmile bounds below were derived by resolving real landmarks to their nearest
-mainline detector, then validated for coverage: every corridor has continuous
-sensor coverage with no gap wider than ~2 miles.
+Note that this module uses each detector's `Length` attribute. That understates
+absolute travel time by roughly 40%, because Length averages 0.34 mi while
+detectors sit 0.58 mi apart. The figures stay internally consistent, since
+actual and baseline share the convention. Routing uses spacing instead; see
+forecast.route.
 """
 from dataclasses import dataclass, field
 
@@ -23,7 +23,7 @@ SPEED_LANE_TYPES = ("ML", "HV")
 
 # PeMS marks imputed samples via pct_observed. District 4 averages only ~51%
 # directly observed, and fully-imputed days are indistinguishable from real
-# ones except by this column — they silently poison training.
+# ones except by this column, and they corrupt training if left in.
 DEFAULT_MIN_PCT_OBSERVED = 20.0
 IMPUTED_DAY_THRESHOLD = 10.0
 
@@ -50,15 +50,15 @@ class Corridor:
 
 
 CORRIDORS = [
-    Corridor("bay-bridge-wb", "Bay Bridge WB — Berkeley to SF", 80, "W", 4.5, 12.0),
-    Corridor("bay-bridge-eb", "Bay Bridge EB — SF to Berkeley", 80, "E", 4.5, 12.0),
-    Corridor("101-nb-peninsula", "US-101 NB — San Jose to SFO", 101, "N", 389.2, 421.6),
-    Corridor("101-sb-peninsula", "US-101 SB — SFO to San Jose", 101, "S", 389.2, 421.6),
-    Corridor("880-nb", "I-880 NB — San Jose to Oakland", 880, "N", 4.5, 41.6),
-    Corridor("880-sb", "I-880 SB — Oakland to San Jose", 880, "S", 4.5, 41.6),
-    Corridor("580-wb-altamont", "I-580 WB — Altamont to Dublin", 580, "W", 17.8, 36.5),
-    Corridor("580-eb-altamont", "I-580 EB — Dublin to Altamont", 580, "E", 17.8, 36.5),
-    Corridor("237-eb", "SR-237 EB — Sunnyvale to Milpitas", 237, "E", 0.0, 12.0),
+    Corridor("bay-bridge-wb", "Bay Bridge WB: Berkeley to SF", 80, "W", 4.5, 12.0),
+    Corridor("bay-bridge-eb", "Bay Bridge EB: SF to Berkeley", 80, "E", 4.5, 12.0),
+    Corridor("101-nb-peninsula", "US-101 NB: San Jose to SFO", 101, "N", 389.2, 421.6),
+    Corridor("101-sb-peninsula", "US-101 SB: SFO to San Jose", 101, "S", 389.2, 421.6),
+    Corridor("880-nb", "I-880 NB: San Jose to Oakland", 880, "N", 4.5, 41.6),
+    Corridor("880-sb", "I-880 SB: Oakland to San Jose", 880, "S", 4.5, 41.6),
+    Corridor("580-wb-altamont", "I-580 WB: Altamont to Dublin", 580, "W", 17.8, 36.5),
+    Corridor("580-eb-altamont", "I-580 EB: Dublin to Altamont", 580, "E", 17.8, 36.5),
+    Corridor("237-eb", "SR-237 EB: Sunnyvale to Milpitas", 237, "E", 0.0, 12.0),
 ]
 
 BY_SLUG = {c.slug: c for c in CORRIDORS}
@@ -118,8 +118,8 @@ def corridor_travel_time(readings, corridor, meta):
 
     Travel time is **scaled to the full corridor length**. A raw sum over only
     the stations that happen to be reporting understates travel time whenever
-    coverage is partial, and — because it looks like a faster trip rather than
-    like missing data — that error is invisible downstream. Scaling by
+    coverage is partial, and because it looks like a faster trip
+    rather than like missing data, that error is invisible downstream. Scaling by
     total_miles / observed_miles keeps intervals comparable.
 
     Stations are never dropped for low pct_observed. It is bimodal rather than a
@@ -169,8 +169,8 @@ def is_imputed_day(readings, threshold=IMPUTED_DAY_THRESHOLD):
     """
     True when a whole day is PeMS-imputed rather than measured.
 
-    These days look completely normal — full station counts, plausible speeds,
-    288 intervals — and are only detectable here. A fully-imputed day covering
+    These days look normal in every other way (full station counts, plausible
+    speeds, 288 intervals) and are only detectable here. A fully-imputed day covering
     a real event will teach a model that the event had no effect, which is
     worse than having no data for it at all.
     """

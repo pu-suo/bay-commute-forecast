@@ -1,28 +1,20 @@
 # site/build_geometry.py
 """
-Turn the local OSM extract into the road geometry the map draws.
+Turn the OSM extract into the road geometry the map draws.
 
-The first version of the map drew straight lines between consecutive detectors.
-That was cheap and it looked it: freeways arrived as chains of chords across
-every curve, and wherever a detector had no forecast the chain simply stopped,
-leaving holes in the middle of I-880. A forecast that looks broken reads as a
-forecast that *is* broken, whatever the accuracy page says.
+The first map drew straight lines between consecutive detectors, so freeways
+arrived as chains of chords across every curve and stopped wherever a detector
+had no forecast, leaving holes mid-freeway. Geometry now comes from OSM and
+forecasts are attached to it:
 
-So geometry now comes from OpenStreetMap and forecasts are attached to it,
-rather than geometry being inferred from the forecasts:
+  freeway   real centrelines cut into ~0.4 mi chunks, each governed by the
+            nearest detector whose direction of travel agrees with the chunk's
+            heading
+  surface   primary and secondary roads within reach of a detector, carrying
+            the inverse-distance weights the spread model uses
 
-  freeway   real centrelines, cut into ~0.4 mi chunks, each chunk governed by
-            the nearest detector whose direction of travel agrees with the
-            chunk's own heading. Every chunk gets a detector, so the network is
-            continuous whether or not a particular sensor reported.
-  surface   primary and secondary roads within reach of a detector, each
-            carrying the inverse-distance weights the spread model uses. These
-            are drawn differently on purpose -- they are inference, not
-            measurement, and the map should never let the two be confused.
-
-Speeds are NOT baked in here. The browser already has the per-detector speed
-series, so shipping geometry keyed by detector id costs one number per chunk
-instead of 168, and the time scrubber stays instant.
+Speeds are not baked in. The browser already holds a speed series per detector,
+so a chunk ships one id instead of 168 numbers and the scrubber stays instant.
 
     python site/build_geometry.py --osm ~/traffic-data/osm/bayarea.osm.pbf
 """
@@ -47,19 +39,17 @@ SURFACE_TAGS = "w/highway=primary,secondary"
 SIMPLIFY_M = 25.0          # Douglas-Peucker tolerance; motorways are smooth
 CHUNK_MI = 0.4             # a little under detector spacing, so no chunk spans two
 MAX_ASSIGN_MI = 4.0        # beyond this a detector does not speak for a chunk
-# The OSM extract reaches into the Central Valley, where PeMS district 4 has
-# nothing: I-5 and CA-99 contribute a fifth of all chunks and not one of them
-# can ever be coloured. Drawing them would be drawing the edge of the data as if
-# it were the edge of the map. Roads further than this from any detector are the
-# map's own boundary and are simply not shown.
+# The OSM extract reaches into the Central Valley, where district 4 has no
+# detectors: I-5 and CA-99 are a fifth of all chunks and none can be coloured.
+# Roads further than this from any detector are not drawn.
 MAX_RENDER_MI = 8.0
 MAX_BEARING_DIFF = 70.0
 SURFACE_RADIUS_MI = 2.0    # matches forecast.surface.RADIUS_MI
-# Must match forecast.surface.MAX_STATIONS. Three was tempting for payload and
-# wrong: measured over the network, the nearest three carry only 69% of the
-# inverse-distance weight (p10 = 53%), so the map would have shaded a street
-# differently from the price the route engine put on it. Coordinates give the
-# bytes back instead -- 4 dp is 11 m, which is finer than these lines are drawn.
+# Must match forecast.surface.MAX_STATIONS. Measured over the network, the
+# nearest three carry only 69% of the inverse-distance weight (p10 = 53%), so
+# cutting to three to save payload would shade a street differently from the
+# price the route engine puts on it. Coordinate precision gives the bytes back:
+# 4 dp is 11 m, finer than these lines are drawn.
 SURFACE_MAX_STATIONS = 6
 COORD_DP = 5               # ~1.1 m, freeway
 SURFACE_DP = 4             # ~11 m, plenty for a 1-2 px line

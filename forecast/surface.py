@@ -1,36 +1,26 @@
 # forecast/surface.py
 """
-Surface-street travel time by spreading freeway congestion onto local roads.
+Estimate surface-street speed by spreading nearby freeway congestion.
 
-PeMS covers freeways only — there is no arterial speed data in it, and no free
-source of Bay Area surface-street speeds exists. But local streets and the
-freeways beside them share their demand drivers: the same commute peaks, the
-same events, the same weather. So freeway congestion is used here as a *proxy*
-signal for nearby local roads.
+PeMS covers freeways only, and there is no free source of Bay Area arterial
+speeds. Local streets and the freeways beside them share demand drivers, so
+freeway congestion is used as a proxy:
 
-The model is deliberately simple and explicit:
-
-    local_speed = maxspeed x (1 - ALPHA x (1 - freeway_ratio))
+    local_speed   = maxspeed * (1 - ALPHA * (1 - freeway_ratio))
     freeway_ratio = inverse-distance-weighted mean of (predicted / free-flow)
-                    over mainline stations within RADIUS_MI
+                    over mainline detectors within RADIUS_MI
 
-ALPHA dampens the transfer: arterials do not slow as hard as the freeway beside
-them, partly because they are already slower and partly because freeway
-congestion diverts traffic *onto* them. ALPHA = 1.0 would mean a local road
-halves in speed exactly when the freeway does.
+Limitations, which are stated on the site as well as here:
 
-HONEST LIMITATIONS — these belong on the site, not just in this docstring:
+  ALPHA is a prior, not a fitted parameter. There is no arterial ground truth to
+  fit it against, so it should be revised from manual spot-checks.
 
-  * ALPHA is an assumption, not a fitted parameter. There is no arterial ground
-    truth to fit it against, so it is a stated prior that should be revised by
-    periodic manual spot-checks.
-  * The sign is not guaranteed. Freeway congestion can push traffic onto
-    parallel arterials (slowing them) or hold it on the freeway (freeing them).
-    Which dominates almost certainly varies by location.
-  * Surface estimates must be reported separately from freeway forecasts and
-    EXCLUDED from the published accuracy statistics. Mixing an unvalidated
-    component into a scored number is how an accuracy page stops meaning
-    anything.
+  The sign is not guaranteed. Freeway congestion can push traffic onto parallel
+  arterials or hold it on the freeway, and which dominates probably varies by
+  location.
+
+  Output from this module is reported separately and excluded from published
+  accuracy figures.
 """
 import json
 import logging

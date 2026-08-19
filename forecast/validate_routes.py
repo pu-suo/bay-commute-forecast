@@ -1,26 +1,21 @@
 # forecast/validate_routes.py
 """
-Score the network model where the product is actually judged: minutes, on real
-corridors, over a held-out period.
+Score the network model in minutes, on real corridors, over a held-out period.
 
-Station-level MAE in mph is what the model optimises, but nobody experiences
-mph. A corridor's travel time is a sum of length/speed terms, so errors on
-individual detectors partly cancel and partly compound, and the only way to know
-which dominates is to compose and measure.
+Detector MAE in mph is what the model optimises, but nobody experiences mph. A
+corridor's travel time is a sum of length/speed terms, so errors partly cancel
+and partly compound; composing and measuring is the only way to know which.
 
-Three series are built for every corridor and every interval, all through the
-same composition so the comparison isolates the model rather than the method:
+Three series per corridor and interval, all through the same composition so the
+comparison isolates the model rather than the method:
 
-  actual     composed from observed station speeds
-  baseline   composed from the seasonal profile fitted on training days only
+  actual     composed from observed detector speeds
+  baseline   composed from the seasonal profile, fitted on training days only
   model      composed from the model's predictions
 
-Spans use detector SPACING, not each detector's nominal `Length`. Length does
-not tile the road -- it averages 0.34 mi against 0.58 mi spacing -- so a sum
-over Length understates a corridor by roughly 40%. The historical corridor
-pipeline predates this correction; its MAE figures are internally consistent
-because actual and baseline share the convention, but its absolute minutes are
-low. Everything here uses spacing.
+Spans use detector spacing, not each detector's `Length`. Length averages
+0.34 mi against 0.58 mi spacing, so summing it understates a corridor by roughly
+40%.
 
     python -m forecast.validate_routes --model models/network/model.txt
 """
@@ -56,9 +51,8 @@ def compose(pivot, weights, total_mi):
     """
     Sum length/speed over whatever is reporting, then scale to full length.
 
-    Scaling is not cosmetic. A raw sum over present detectors reads as a faster
-    trip rather than as missing data, which is the single most dangerous
-    silent failure in this pipeline.
+    A raw sum over present detectors looks like a faster trip rather than like
+    missing data, so scaling matters.
     """
     mph = pivot.to_numpy(dtype=float)
     ok = np.isfinite(mph) & (mph > 0)
@@ -164,19 +158,16 @@ def main(argv=None):
         base, _ = compose(piv["seasonal_speed"][order], w, tot)
         pred, _ = compose(piv["pred"][order], w, tot)
 
-        # Coverage is nearly constant within a corridor -- the same detectors
-        # report all year and the rest never do -- so an ABSOLUTE threshold does
-        # not select good intervals, it deletes whole corridors. The Bay Bridge
-        # runs at 0.50 coverage every hour of every day; at a 0.80 cut it simply
-        # vanishes from the report, which reads as "no data" rather than as
-        # "threshold chosen badly". This is the `pct_observed` trap wearing a
-        # different hat.
+        # Coverage is near-constant within a corridor: the same detectors
+        # report all year and the rest never do. An absolute threshold therefore
+        # deletes whole corridors rather than selecting good intervals. The Bay
+        # Bridge runs at 0.50 coverage every hour of every day and disappears
+        # entirely at a 0.80 cut.
         #
-        # So the threshold is relative to the corridor's own median, which
-        # catches real outages and keeps the structural gaps, and the scaling in
-        # compose() handles the rest. Actual, baseline and prediction all pass
-        # through the same detectors and the same scaling, so the comparison is
-        # unaffected either way -- only the absolute minutes shift.
+        # The threshold is relative to the corridor's own median instead, which
+        # catches real outages and keeps the structural gaps. Actual, baseline
+        # and prediction share the same detectors and the same scaling, so only
+        # the absolute minutes shift.
         med_cov = float(np.nanmedian(cov))
         ok = (np.isfinite(actual) & np.isfinite(base) & np.isfinite(pred)
               & (cov >= a.min_coverage * med_cov))

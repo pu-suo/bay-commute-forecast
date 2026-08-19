@@ -1,30 +1,20 @@
 # collector/events_normalize.py
 """
-Normalise raw crawled events into a modelling-ready table.
+Clean raw crawled events into a modelling-ready table.
 
-The crawlers deliberately over-collect: it is cheaper to filter junk afterwards
-than to re-run a 30-minute Wayback replay because a parser was too strict. This
-pass does the cleanup that must happen before anything trains on the rows.
+The crawlers over-collect on purpose, since filtering afterwards is cheaper than
+re-running a 30-minute Wayback replay because a parser was too strict. This pass
+fixes five defects seen in the 2022-2026 crawl:
 
-Four fixes, each from a real defect observed in the 2022-2026 crawl:
-
-  1. Times embedded in titles. Chase Center renders
-     "Wednesday April 27 - 07:00 PM - Chase Center - Game 5: Warriors ..." so the
-     start time exists but arrives as prose. Recovered and promoted to the
-     timestamp, which matters because event effects are timed, not daily.
-
-  2. Non-events. "2026 Premium Season Tickets Wait List", "Protocol Update" and
-     "Events Calendar - Filter by" are ticket products and site chrome. Left in,
-     they become phantom event-days that teach the model events do nothing.
-
-  3. Implausible times. Stanford's feed yields 10:41 and 10:45 kickoffs, which
-     are not real slots — almost certainly placeholders. Times at odd minutes
-     are demoted to date-only rather than trusted.
-
-  4. Duplicates across snapshots. Every Wayback snapshot re-lists the same
-     upcoming events. Dedupe keeps the EARLIEST observation, so captured_at
-     records when an event was first announced — which is the point-in-time
-     fact a forecast issued on a given date is allowed to know.
+  1. Times embedded in titles. Chase Center renders "Wednesday April 27 - 07:00
+     PM - Chase Center - Game 5" so the time arrives as prose. Recovered.
+  2. Non-events: ticket products and site chrome ("Season Tickets Wait List",
+     "Events Calendar"). Left in, they become event-days with no traffic effect.
+  3. Implausible times. Stanford yields 10:41 kickoffs, which are placeholders.
+     Times at odd minutes are demoted to date-only.
+  4. Cancellations. Venues keep the listing and edit the title.
+  5. Duplicates across snapshots. Dedupe keeps the earliest observation, so
+     captured_at records when an event was first announced.
 """
 import argparse
 import json
