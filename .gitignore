@@ -22,6 +22,7 @@ data/
 # Trained boosters are build output, rebuilt by `make train`. The metrics beside
 # them ARE committed: they are the record of what the model scored.
 models/**/model.txt
+models/model.txt
 
 # OS / editor
 .DS_Store
