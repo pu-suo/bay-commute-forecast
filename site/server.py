@@ -38,13 +38,31 @@ STATE = {}
 PROFILE_STEP_MIN = 15
 
 
+def current_forecast():
+    """
+    Reload the table when the nightly job replaces it.
+
+    The server holds the whole forecast in memory, which is what makes a route
+    query a dictionary lookup. That is also how it ends up serving yesterday's
+    numbers at 04:00 without noticing, so the file's mtime is checked per
+    request -- a stat call, against a rebuild that happens once a day.
+    """
+    path = os.path.join(os.path.expanduser(STATE["serve"]), "forecast.parquet")
+    mtime = os.path.getmtime(path)
+    if mtime != STATE.get("mtime"):
+        logger.info("forecast table changed; reloading")
+        STATE["fc"] = Forecast(STATE["serve"], STATE["meta"])
+        STATE["mtime"] = mtime
+    return STATE["fc"]
+
+
 def _point(raw):
     lat, lon = (float(x) for x in raw.split(","))
     return lat, lon
 
 
 def route_response(origin, dest, depart):
-    segs, summary = plan(origin, dest, depart, STATE["fc"], STATE["osrm"])
+    segs, summary = plan(origin, dest, depart, current_forecast(), STATE["osrm"])
     keep = ["kind", "miles", "mph", "minutes", "arrive", "estimate",
             "sensor_id", "freeway", "direction", "lat", "lon"]
     rows = []
@@ -60,13 +78,14 @@ def route_response(origin, dest, depart):
 
 def profile(origin, dest, date, step=PROFILE_STEP_MIN):
     """Travel time for every departure slot on one day."""
+    fc = current_forecast()
     day = pd.Timestamp(date).normalize()
     out = []
     for m in range(0, 24 * 60, step):
         t = day + pd.Timedelta(minutes=m)
-        if not (STATE["fc"].start <= t <= STATE["fc"].end):
+        if not (fc.start <= t <= fc.end):
             continue
-        _, s = plan(origin, dest, t, STATE["fc"], STATE["osrm"])
+        _, s = plan(origin, dest, t, fc, STATE["osrm"])
         out.append({"depart": t.isoformat(), "minutes": round(s["total_minutes"], 1),
                     "measured_share": round(s["measured_share"], 3)})
     return out
@@ -80,13 +99,14 @@ def solve_arrive_by(origin, dest, arrive, step=PROFILE_STEP_MIN):
     leaving 30 minutes earlier can save 45. Walk candidate departures backwards
     from the deadline and take the last one that still lands in time.
     """
+    fc = current_forecast()
     target = pd.Timestamp(arrive)
     best = None
     for back in range(0, 24 * 60 + 1, step):
         t = target - pd.Timedelta(minutes=back)
-        if t < STATE["fc"].start:
+        if t < fc.start:
             break
-        _, s = plan(origin, dest, t, STATE["fc"], STATE["osrm"])
+        _, s = plan(origin, dest, t, fc, STATE["osrm"])
         landing = t + pd.Timedelta(minutes=s["total_minutes"])
         if landing <= target:
             best = {"depart": t.isoformat(), "arrive": landing.isoformat(),
@@ -129,7 +149,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"profile": profile(origin, dest, q["date"][0])})
 
             if parsed.path == "/api/horizon":
-                fc = STATE["fc"]
+                fc = current_forecast()
                 return self._send(200, {"start": fc.start.isoformat(),
                                         "end": fc.end.isoformat(), "slot": fc.slot})
             return self._static(parsed.path)
@@ -164,9 +184,9 @@ def main(argv=None):
     meta = pd.read_csv(os.path.join(os.path.expanduser(a.data), "_meta", "d04_meta.txt"),
                        sep="\t")
     meta = meta[meta["Type"] == "ML"].rename(columns={"ID": "sensor_id"})
-    STATE["fc"] = Forecast(a.serve, meta)
-    STATE["osrm"] = a.osrm
-    logger.info("forecast horizon %s -> %s", STATE["fc"].start, STATE["fc"].end)
+    STATE["serve"], STATE["meta"], STATE["osrm"] = a.serve, meta, a.osrm
+    fc = current_forecast()
+    logger.info("forecast horizon %s -> %s", fc.start, fc.end)
     logger.info("serving http://localhost:%d", a.port)
     ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()
 
