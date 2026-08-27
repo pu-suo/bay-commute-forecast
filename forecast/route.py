@@ -208,30 +208,50 @@ def price(spans, fc, pts, cum_mi, cum_min, depart):
     return pd.DataFrame(out)
 
 
-def plan(origin, dest, depart, fc, base=OSRM):
-    """Full route forecast. Returns (segments, summary)."""
-    pts, cum_mi, cum_min = osrm_route(origin, dest, base)
-    route_mi = float(cum_mi[-1])
-    matched, _ = match_route(pts, fc.meta, cum_mi=cum_mi)
-    segs = price(build_spans(matched, route_mi), fc, pts, cum_mi, cum_min, depart)
+class PreparedRoute:
+    """
+    The part of a route that does not depend on departure time.
 
+    OSRM's path, the detectors it passes and the spans between them are the same
+    whatever time you leave; only the prices change. Splitting them apart lets an
+    all-day profile call OSRM once instead of once per slot.
+    """
+
+    __slots__ = ("pts", "cum_mi", "cum_min", "matched", "spans", "route_mi")
+
+    def __init__(self, origin, dest, meta, base=OSRM):
+        self.pts, self.cum_mi, self.cum_min = osrm_route(origin, dest, base)
+        self.route_mi = float(self.cum_mi[-1])
+        self.matched, _ = match_route(self.pts, meta, cum_mi=self.cum_mi)
+        self.spans = build_spans(self.matched, self.route_mi)
+
+
+def price_at(prepared, depart, fc):
+    """Price an already-prepared route for one departure time."""
+    segs = price(prepared.spans, fc, prepared.pts, prepared.cum_mi,
+                 prepared.cum_min, depart)
     fwy = segs[~segs["estimate"]] if len(segs) else segs
     srf = segs[segs["estimate"]] if len(segs) else segs
+    total = float(segs["minutes"].sum()) if len(segs) else 0.0
     summary = {
         "depart": str(pd.Timestamp(depart)),
-        "arrive": str(pd.Timestamp(depart) + pd.Timedelta(minutes=float(segs["minutes"].sum()))),
-        "total_minutes": float(segs["minutes"].sum()),
+        "arrive": str(pd.Timestamp(depart) + pd.Timedelta(minutes=total)),
+        "total_minutes": total,
         "freeway_minutes": float(fwy["minutes"].sum()) if len(fwy) else 0.0,
         "surface_minutes": float(srf["minutes"].sum()) if len(srf) else 0.0,
-        "route_miles": route_mi,
+        "route_miles": prepared.route_mi,
         "freeway_miles": float(fwy["miles"].sum()) if len(fwy) else 0.0,
         "surface_miles": float(srf["miles"].sum()) if len(srf) else 0.0,
-        "osrm_freeflow_minutes": float(cum_min[-1]),
+        "osrm_freeflow_minutes": float(prepared.cum_min[-1]),
         "stations_used": int(len(fwy)),
     }
-    summary["measured_share"] = (summary["freeway_minutes"] /
-                                 summary["total_minutes"]) if summary["total_minutes"] else 0.0
+    summary["measured_share"] = (summary["freeway_minutes"] / total) if total else 0.0
     return segs, summary
+
+
+def plan(origin, dest, depart, fc, base=OSRM):
+    """Full route forecast for one departure time. Returns (segments, summary)."""
+    return price_at(PreparedRoute(origin, dest, fc.meta, base), depart, fc)
 
 
 def main(argv=None):

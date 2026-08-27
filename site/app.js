@@ -20,6 +20,12 @@ const NO_DATA = '#b9c2ce';
 // proportional slowdown; a stated prior, not a fitted value.
 const ALPHA = 0.5;
 
+// On GitHub Pages the static files and the API live on different origins, so
+// the base is read from a config file the deploy writes. Missing or empty means
+// same-origin, which is how the local server runs.
+let API = '';
+const api = path => API + path;
+
 const $ = id => document.getElementById(id);
 const fmtHM = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const colourFor = r => (SCALE.find(s => r >= s[0]) || SCALE[SCALE.length - 1])[1];
@@ -170,6 +176,19 @@ function renderWeek(slug) {
   $('week').innerHTML = html + '</table>';
 }
 
+function renderFreshness() {
+  const el = $('freshness');
+  if (!state.cor.generated) return;
+  const made = new Date(state.cor.generated);
+  const hours = (Date.now() - made) / 3.6e6;
+  const when = made.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  // A stalled pipeline would otherwise look identical to a working one.
+  el.className = hours > 36 ? 'stale' : '';
+  el.textContent = hours > 36
+    ? `Forecast last updated ${when}, more than a day ago. It may be out of date. `
+    : `Forecast generated ${when}. `;
+}
+
 function renderEvents() {
   $('events').innerHTML = state.cor.events.slice(0, 12).map(e => {
     const d = new Date(e.ts);
@@ -204,7 +223,7 @@ function attachSearch(which) {
     // one request per pause in typing, not one per keystroke
     timer = setTimeout(async () => {
       try {
-        const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
+        const r = await fetch(api('/api/geocode?q=') + encodeURIComponent(q));
         results = (await r.json()).results || [];
       } catch { results = []; }
       if (!results.length) return close();
@@ -284,12 +303,12 @@ async function forecastRoute() {
   const key = state.mode === 'leave' ? 'depart' : 'arrive';
   $('go').disabled = true; $('go').textContent = 'Working…';
   try {
-    const url = `/api/route?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&${key}=${when}`;
+    const url = api(`/api/route?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&${key}=${when}`);
     const data = await (await fetch(url)).json();
     if (data.error) throw new Error(data.error);
     showRoute(data);
-    const p = await (await fetch(
-      `/api/profile?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&date=${$('day').value}`)).json();
+    const p = await (await fetch(api(
+      `/api/profile?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&date=${$('day').value}`))).json();
     drawProfile(p.profile || []);
   } catch (err) {
     $('answer').classList.add('on');
@@ -386,6 +405,8 @@ function drawProfile(rows) {
 // ---- boot -------------------------------------------------------------------
 (async function () {
   drawLegend();
+  API = await fetch('config.json').then(r => r.json()).then(c => c.api_base || '')
+                                  .catch(() => '');
   const [net, cor, geo] = await Promise.all([
     fetch('data/network.json').then(r => r.json()),
     fetch('data/corridors.json').then(r => r.json()),
@@ -411,5 +432,6 @@ function drawProfile(rows) {
   ['from', 'to'].forEach(attachSearch);
   drawNetwork();
   renderWeek(cor.corridors[0].slug);
+  renderFreshness();
   renderEvents();
 })();

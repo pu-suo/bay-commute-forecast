@@ -227,3 +227,6 @@ button.toggle[aria-pressed="true"] i { opacity: 1; background: var(--accent);
   box-shadow: 0 4px 0 -1px var(--accent); }
 
 table.segs td i { font-style: italic; color: var(--ink-3); }
+
+footer #freshness { color: var(--ink-2); }
+footer #freshness.stale { color: var(--jam); font-weight: 600; }

@@ -67,4 +67,13 @@ echo "--- rebuild road geometry"
 $PY site/build_geometry.py --osm "$DATA/osm/bayarea.osm.pbf" \
     --serve "$DATA/serve" --out "$REPO/site/data"
 
+# Publishing is skipped rather than fatal when there is no remote yet, so the
+# pipeline works the same before and after the site goes live.
+if git -C "$REPO" remote get-url origin >/dev/null 2>&1; then
+  echo "--- publish to Pages"
+  bash "$REPO/deploy/publish.sh"
+else
+  echo "--- no origin remote, skipping publish"
+fi
+
 echo "=== $(date -u +%FT%TZ) nightly ok ==="

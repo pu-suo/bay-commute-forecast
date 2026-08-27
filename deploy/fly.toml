@@ -1,0 +1,40 @@
+# Fly config for the API. The static site is on Pages; this serves /api/* only.
+#
+# The machine is not stopped when idle: OSRM memory-maps an 880 MB graph, so a
+# cold start is slow enough that a visitor would notice, and the API is the
+# interactive half of the site.
+
+app = "bay-commute-forecast"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SERVE_DIR = "/data/serve"
+  STATIONS_DIR = "/data/stations"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  BEHIND_PROXY = "1"
+  REFRESH_MIN = "60"
+  # Set these for your own deploy:
+  # ALLOW_ORIGIN = "https://<user>.github.io"
+  # SERVE_URL    = "https://<user>.github.io/bay-commute-forecast/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"
