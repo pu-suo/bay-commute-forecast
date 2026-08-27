@@ -47,10 +47,10 @@ def current_forecast():
     """
     Reload the table when the nightly job replaces it.
 
-    The server holds the whole forecast in memory, which is what makes a route
-    query a dictionary lookup. That is also how it ends up serving yesterday's
-    numbers at 04:00 without noticing, so the file's mtime is checked per
-    request -- a stat call, against a rebuild that happens once a day.
+    The server holds the whole forecast in memory, which makes a route query a
+    dictionary lookup and also means it would serve yesterday's numbers at 04:00
+    without noticing. The file's mtime is checked per request: one stat call
+    against a rebuild that happens once a day.
     """
     path = os.path.join(os.path.expanduser(STATE["serve"]), "forecast.parquet")
     mtime = os.path.getmtime(path)
@@ -100,9 +100,9 @@ def solve_arrive_by(origin, dest, arrive, step=PROFILE_STEP_MIN):
     """
     Latest departure that still arrives by the deadline.
 
-    Travel time depends on when you leave, so this cannot be a subtraction --
-    leaving 30 minutes earlier can save 45. Walk candidate departures backwards
-    from the deadline and take the last one that still lands in time.
+    Travel time depends on when you leave, so this cannot be a subtraction:
+    leaving 30 minutes earlier can save 45. Walks candidate departures backwards
+    from the deadline and takes the last one that still lands in time.
     """
     fc = current_forecast()
     target = pd.Timestamp(arrive)

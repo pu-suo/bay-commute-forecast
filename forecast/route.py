@@ -144,9 +144,8 @@ def build_spans(matched, route_mi):
     Cut the route into freeway spans (one detector each) and surface spans.
 
     Each matched station governs from where it sits to the next one. A span
-    longer than MAX_FREEWAY_SPAN_MI is reclassified as surface: the detector
-    behind it stopped being evidence somewhere in the middle, and the honest
-    move is to stop claiming it.
+    longer than MAX_FREEWAY_SPAN_MI is reclassified as surface, since the
+    detector behind it stopped being evidence somewhere in the middle.
     """
     spans = []
     if matched.empty:

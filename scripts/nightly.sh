@@ -28,10 +28,9 @@ set -a; . "$HOME/.pems_env"; set +a
 echo "--- PeMS: any missing days this year"
 $PY -m forecast.backfill_stations --years "$(date +%Y)" --out "$DATA/stations"
 
-# Roadwork is NOT collected here. Caltrans publishes current state only, so a
-# missed day is gone forever -- it gets its own launchd agent at 03:05 so a
-# failure anywhere in this pipeline cannot cost a day of history that can never
-# be backfilled.
+# Roadwork is not collected here. Caltrans publishes current state only, so a
+# missed day is gone forever. It gets its own launchd agent at 03:05 so a
+# failure in this pipeline cannot cost a day of unrecoverable history.
 
 echo "--- venue calendars, forward events"
 $PY -m collector.venue_events --live --out "$DATA/events"

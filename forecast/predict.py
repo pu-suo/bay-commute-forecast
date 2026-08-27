@@ -11,7 +11,7 @@ feature must be computable for a date that has not happened yet:
                          behind, so "yesterday" is genuinely the freshest actual
                          available, which is fine because this predicts
                          tomorrow, not now.
-  weather                Open-Meteo *Forecast* API, not the archive
+  weather                Open-Meteo Forecast API, not the archive
   events                 the live venue crawl
 
 Nothing here may read the target. If a feature cannot be produced for a future
@@ -188,7 +188,7 @@ def add_events(df, events_path):
         df.loc[sub[active], "event_time_known"] = np.array([r[3] for r in recs])[use][active]
         labels = np.array([f"{r[5]}: {r[4]}" for r in recs], dtype=object)
         df.loc[sub[active], "event_label"] = labels[use][active]
-        # The label is for humans, so it must name events happening on *that*
+        # The label is for humans, so it must name events happening on that
         # day. The feature window runs six hours past the start, so a Saturday
         # evening event stays active into Sunday's small hours, correct for the
         # model, wrong on a page that would then claim Sunday has a game.

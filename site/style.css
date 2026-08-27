@@ -1,8 +1,6 @@
 /* site/style.css
-   Palette and type for a forecast instrument, not a marketing page.
-   Ground is a cold slate with a blue bias; the only saturated colour in the
-   interface is the speed scale itself, so a glance at the map reads as data
-   rather than as decoration. */
+   Ground is a cold slate with a blue bias. The speed scale is the only
+   saturated colour in the interface. */
 
 :root {
   --ground:      #f2f4f7;

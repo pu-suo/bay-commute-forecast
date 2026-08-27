@@ -1,8 +1,5 @@
-# Makefile — the whole project as a handful of verbs.
-#
 # Targets are ordered the way the data flows. Everything reads and writes
-# $(DATA) (outside the repo, since it is 1.7 GB) and nothing here needs a GPU,
-# a cloud account, or a database.
+# $(DATA), which lives outside the repo.
 
 PY   ?= /Users/Tom/miniforge3/bin/python
 DATA ?= $(HOME)/traffic-data

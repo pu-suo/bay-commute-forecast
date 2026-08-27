@@ -4,14 +4,13 @@ venv/
 __pycache__/
 *.py[cod]
 
-# Secrets — credentials live in ~/.pems_env, never in the repo
+# Secrets. Credentials live in ~/.pems_env, never in the repo.
 .env
 .env.*
 !.env.example
 *.pem
 
-# Collected data lives outside the repo (~/traffic-data).
-# Nothing here is committed by accident; see README for the layout.
+# Collected data lives outside the repo, in ~/traffic-data.
 data/
 *.txt.gz
 *.json.gz
@@ -19,8 +18,8 @@ data/
 # Large derived artifacts
 *.parquet
 
-# Trained boosters are build output, rebuilt by `make train`. The metrics beside
-# them ARE committed: they are the record of what the model scored.
+# Boosters are build output, rebuilt by `make train`. The metrics beside them
+# are committed, since they record what the model scored.
 models/**/model.txt
 models/model.txt
 

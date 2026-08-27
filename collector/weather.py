@@ -84,14 +84,12 @@ def grid_points(meta, step):
     mainline station.
 
     Corridor midpoints were enough for nine corridors, but the network spans
-    Gilroy to Ukiah -- 130 miles -- and nearest-point assignment from five
-    distinct locations would hand a Santa Rosa station the weather in Oakland.
-    A regular grid over the occupied cells is coarse in the right way: it is
-    wrong by at most half a cell everywhere, instead of nearly right in five
-    places and badly wrong elsewhere.
+    130 miles and nearest-point assignment from five locations would hand a
+    Santa Rosa station the weather in Oakland. A regular grid is wrong by at
+    most half a cell everywhere instead.
 
-    Empty cells are skipped. Of the 90 cells in the bounding box only 30 hold a
-    station, so the grid costs a third of what its extent suggests.
+    Empty cells are skipped. Of the 90 cells in the bounding box, 30 hold a
+    station.
     """
     import numpy as np
     ml = meta[meta["Type"] == "ML"]
@@ -121,7 +119,7 @@ def fetch_archived_forecast(lat, lon, start, end):
 
 
 def fetch_live_forecast(lat, lon, days=7):
-    """Hourly forecast going forward -- what the nightly job actually serves on."""
+    """Hourly forecast going forward. This is what the nightly job serves on."""
     data = _get(LIVE_FORECAST, {
         "latitude": lat, "longitude": lon,
         "forecast_days": days,

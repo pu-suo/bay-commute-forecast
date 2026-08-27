@@ -190,7 +190,7 @@ def add_weather(df, weather_dir):
     joined = df.join(grid, on=["key", "hour"])
 
     p = joined["precipitation"]
-    # missing weather is NOT dry weather: the archive starts in 2022
+    # missing weather is not dry weather: the archive starts in 2022
     df["wx_class"] = np.where(p.isna(), "unknown",
                      np.where(p >= 2.5, "rain_heavy",
                      np.where(p >= 0.2, "rain_light", "dry")))

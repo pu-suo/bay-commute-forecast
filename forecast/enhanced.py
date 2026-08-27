@@ -23,7 +23,7 @@ Layers, in the order the residual analysis said they matter:
   event     venue events, bucketed by hours since start. Large where they
             apply and rare enough to be invisible in a global average. The
             attribution below reports both so neither number misleads.
-  weather   rain and wind, from *archived forecasts* rather than observations,
+  weather   rain and wind, from archived forecasts rather than observations,
             so training input matches what serving will actually have.
 
 Every factor is estimated on data strictly before the test window. A factor
@@ -122,10 +122,10 @@ def add_weather_features(df, weather_dir):
     df["key"] = df["corridor"].map(slug_to_point)
     joined = df.join(grid, on=["key", "hour"])
 
-    # "no row in the weather archive" is NOT "it did not rain". The archive
+    # "no row in the weather archive" is not "it did not rain". The archive
     # starts ~2022, so filling nulls with zero asserts that 2021 was
     # permanently dry: 15% of the corpus, and a model trained on it would learn
-    # exactly that. Missing stays missing.
+    # exactly that.
     precip = joined["precipitation"]
     df["wx_class"] = np.where(precip.isna(), "unknown",
                      np.where(precip >= 2.5, "rain_heavy",

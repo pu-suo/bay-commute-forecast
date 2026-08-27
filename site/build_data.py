@@ -156,7 +156,7 @@ def main(argv=None):
             shutil.copy(src, os.path.join(out, name))
             logger.info("copied %s", name)
         else:
-            logger.warning("missing %s -- accuracy page will show a gap", src)
+            logger.warning("missing %s, accuracy page will show a gap", src)
     return 0
 
 

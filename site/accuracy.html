@@ -40,18 +40,16 @@
   <h2>On the nine named commutes</h2>
   <p>Travel time in minutes, composed from detector-level forecasts and compared
      against what those corridors actually did. The baseline is the seasonal
-     profile: the same weekday and time of day averaged over history. That is a
-     strong opponent at a day-ahead horizon, and the thing any model has to beat
-     to earn its place.</p>
+     profile: the same weekday and time of day averaged over history, which is a
+     strong opponent at a day-ahead horizon.</p>
   <div class="num" id="headline"></div>
   <table class="data" id="corridors"></table>
 
   <h2>At detector level</h2>
-  <p>Speed in mph, per five-minute detector reading. Split two ways: stations
-     the model trained on, and stations it has never seen. The second is the
-     one that matters: the network has 2,291 detectors and the model is trained
-     on a fraction of them, so the design rests on the gap between these two
-     columns being small.</p>
+  <p>Speed in mph, per five-minute detector reading. Split two ways: detectors
+     the model trained on, and detectors it has never seen. The network has 2,291
+     detectors and the model trains on a fraction of them, so the gap between
+     those two columns is what matters.</p>
   <table class="data" id="slices"></table>
 
   <div class="note" id="holdout"></div>
@@ -62,9 +60,6 @@
      not fitted. There is no public source of Bay Area arterial speeds to score
      it against. It is labelled wherever it appears, reported separately in every
      route breakdown, and excluded from every figure on this page.</p>
-  <p>Roadwork is collected nightly but is not yet a model feature: Caltrans
-     publishes current state only, so the archive began the day collection
-     started and is still too short to train on.</p>
   <p id="generated" style="margin-top:40px;color:var(--ink-3);font-size:12px"></p>
 </div>
 <script>

@@ -154,7 +154,7 @@ def local_xy(lat, lon):
 def build_freeway(pbf, stations, tree, sxy, known):
     """Chunked motorway/trunk centrelines, each with a governing detector."""
     from forecast.matching import station_bearings
-    # The direction of travel, not the letter on the shield -- see the note in
+    # The direction of travel, not the letter on the shield. See the note in
     # forecast.matching. Using the signed direction here left a third of the
     # network grey, concentrated on I-580 and I-80.
     sbrg = station_bearings(stations).to_numpy(dtype=float)

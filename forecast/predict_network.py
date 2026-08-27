@@ -43,8 +43,8 @@ def horizon_frame(seasonal, start_date, days, slot_minutes=SLOT_MINUTES):
     Built as a merge rather than a loop: the seasonal table is already keyed by
     (station, dow, tod), so the horizon is a small frame of dates joined to it.
     Stations with no profile for a slot drop out here rather than reaching the
-    model with a missing baseline -- the seasonal median is the single strongest
-    feature and imputing it would be inventing the answer.
+    model with a missing baseline. The seasonal median is the strongest feature
+    by a wide margin, so imputing it would be inventing the answer.
     """
     tods = np.arange(0, 24 * 60, slot_minutes, dtype=np.int16)
     dates = pd.date_range(start_date, periods=days, freq="D")

@@ -78,7 +78,7 @@ class Venue:
 
 
 # Every venue large enough to plausibly move a freeway is included. Which of
-# them *actually* do is a coefficient the model estimates, not a filter applied
+# them do in practice is a coefficient the model estimates, not a filter
 # here: coarse before/after tests at n<10 detect a Levi's-sized effect and would
 # miss anything conditional on sellout, weather, or peak overlap.
 VENUES = [
@@ -116,17 +116,15 @@ def corridor_travel_time(readings, corridor, meta):
     `readings` is a parsed station_5min frame (see pems_client.parse_station_5min)
     carrying ts, sensor_id, avg_speed and pct_observed.
 
-    Travel time is **scaled to the full corridor length**. A raw sum over only
-    the stations that happen to be reporting understates travel time whenever
-    coverage is partial, and because it looks like a faster trip
-    rather than like missing data, that error is invisible downstream. Scaling by
-    total_miles / observed_miles keeps intervals comparable.
+    Travel time is scaled to the full corridor length by
+    total_miles / observed_miles. A raw sum over only the reporting stations
+    understates travel time when coverage is partial, and looks like a faster
+    trip rather than like missing data.
 
     Stations are never dropped for low pct_observed. It is bimodal rather than a
-    smooth quality gradient (about a quarter of station-intervals sit at exactly
-    0 and the median is 100), so thresholding it removes whole segments from the
-    sum and corrupts the very number it was meant to protect. Quality is
-    *reported* here and filtered at training time instead.
+    quality gradient (a quarter of station-intervals sit at exactly 0, median
+    100), so thresholding removes whole segments from the sum. Quality is
+    reported here and filtered at training time.
 
     Returns a frame indexed by timestamp with:
         minutes         travel time, scaled to full corridor length
@@ -170,8 +168,7 @@ def is_imputed_day(readings, threshold=IMPUTED_DAY_THRESHOLD):
     True when a whole day is PeMS-imputed rather than measured.
 
     These days look normal in every other way (full station counts, plausible
-    speeds, 288 intervals) and are only detectable here. A fully-imputed day covering
-    a real event will teach a model that the event had no effect, which is
-    worse than having no data for it at all.
+    speeds, 288 intervals) and are only detectable here. A fully imputed day
+    covering a real event teaches a model that the event had no effect.
     """
     return float(readings["pct_observed"].mean()) < threshold

@@ -52,10 +52,8 @@ def station_bearings(stations):
 
     Taken from the neighbouring detectors on the same freeway and direction,
     ordered by absolute postmile, and flipped for southbound and westbound so it
-    points the way traffic goes rather than the way postmiles count.
-
-    Falls back to the signed direction only where a detector has no neighbour to
-    take a bearing from.
+    points the way traffic goes. Falls back to the signed direction where a
+    detector has no neighbour to take a bearing from.
     """
     out = pd.Series(stations["Dir"].map(DIR_BEARING).to_numpy(dtype=float),
                     index=stations.index)

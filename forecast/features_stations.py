@@ -47,15 +47,14 @@ def build_seasonal(data_dir, train_end=TRAIN_END, min_pct_observed=20):
     Streaming mean/sd per (station, weekday, time-of-day) over the train span.
 
     Accumulated into dense numpy arrays rather than by adding pandas Series.
-    The key space is bounded -- 2,291 stations x 7 weekdays x 288 intervals, so
-    ~4.6M cells, about 110 MB across the three accumulators -- while aligning
-    660k-entry Series 1,461 times is quadratic-ish in practice and does not
-    finish. np.add.at on flat indices is O(rows) per day.
+    The key space is bounded (2,291 stations x 7 weekdays x 288 intervals, so
+    ~4.6M cells and about 110 MB across the three accumulators), while aligning
+    660k-entry Series 1,461 times does not finish. np.add.at on flat indices is
+    O(rows) per day.
 
     Exact medians would need every value retained, so this keeps sums and
     sums-of-squares and reports the mean. On 5-minute speeds the two are close,
-    and the sd is passed to the model separately so it can learn where they
-    diverge.
+    and the sd is passed to the model separately.
     """
     paths = [p for p in _day_paths(data_dir) if _date_of(p) < pd.Timestamp(train_end)]
     logger.info("seasonal table from %d training days", len(paths))
@@ -107,17 +106,14 @@ def split_stations(seasonal, holdout_frac=0.30, seed=7):
     """
     Partition stations into a training pool and a spatial holdout.
 
-    The holdout is the point of the whole design. Training on a sample of
-    stations is only defensible if the model then works on stations whose rows
-    it never saw, and the only way to know that is to withhold some and look.
-    A purely temporal split cannot answer it: every station appears in both
-    halves, so the model can memorise station-specific level and still score
-    well.
+    Training on a sample of stations only works if the model then works on
+    stations whose rows it never saw. A temporal split cannot show that, since
+    every station appears in both halves and the model can memorise
+    station-specific level and still score well.
 
-    The holdout stations keep their seasonal profile, because in production
-    every station has one -- the profile is computed from history for all 2,291
-    regardless of which rows the model trained on. What is withheld is the
-    chance to learn that station's idiosyncrasies.
+    Holdout stations keep their seasonal profile, because in production every
+    station has one regardless of which rows the model trained on. What is
+    withheld is the chance to learn that station's idiosyncrasies.
     """
     allst = np.sort(seasonal["station"].unique())
     rng = np.random.default_rng(seed)
@@ -169,12 +165,11 @@ def attach_station_attrs(df, meta):
     Generalisable station attributes, so unseen stations still get a prediction.
 
     Unmatched stations are dropped here rather than downstream, and the freeway
-    number is forced to an integer string. Both matter more than they look: a
-    left join that leaves one NaN promotes the whole column to float, so the
-    category becomes "101.0" instead of "101" and matches nothing the model
-    learned. Training and serving happened to differ by exactly one such NaN,
-    which silently voided the freeway feature for every served row while
-    producing perfectly plausible speeds.
+    number is forced to an integer string. A left join leaving one NaN promotes
+    the whole column to float, so the category becomes "101.0" instead of "101"
+    and matches nothing the model learned. Training and serving differed by
+    exactly one such NaN, which voided the freeway feature for every served row
+    while still producing plausible speeds.
     """
     m = meta.copy()
     m["station"] = m["sensor_id"].astype(int)
@@ -207,14 +202,13 @@ def attach_weather(df, weather_dir, name="archived_forecast_grid"):
 
     Each station is assigned once to the nearest cell centre; the join is then
     (cell, hour), which keeps it a single merge rather than a spatial lookup per
-    row. Missing weather stays "unknown" rather than becoming dry -- the archive
-    starts in 2022 and asserting sunshine before that is how a model learns that
-    2021 never rained.
+    row. Missing weather stays "unknown" rather than becoming dry, since the
+    archive starts in 2022.
     """
     base = os.path.expanduser(weather_dir)
     path = os.path.join(base, f"{name}.parquet")
     if not os.path.exists(path):
-        logger.warning("no gridded weather at %s -- weather features disabled", path)
+        logger.warning("no gridded weather at %s, weather features disabled", path)
         df["wx_class"] = "unknown"
         df["precip_mm"] = np.nan
         df["wind_kmh"] = np.nan
@@ -226,8 +220,8 @@ def attach_weather(df, weather_dir, name="archived_forecast_grid"):
     cells = wx[["lat", "lon"]].drop_duplicates().to_numpy()
 
     # rain that has been falling for hours behaves differently from a first
-    # burst, so accumulate per cell before the join rather than after -- after
-    # the join the same cell-hour appears on hundreds of stations.
+    # burst, so accumulate per cell before the join. After the join the same
+    # cell-hour appears on hundreds of stations.
     wx = wx.sort_values(["lat", "lon", "hour"])
     wx["precip_3h"] = (wx.groupby(["lat", "lon"])["precipitation"]
                          .rolling(3, min_periods=1).sum()
@@ -260,22 +254,19 @@ def attach_events(df, events_path, max_miles=12.0):
     """
     Nearest venue event in time, for the venue nearest each station in space.
 
-    The corridor model hard-coded which corridors a venue could affect. That
-    does not scale and it bakes in an assumption the data should decide, so here
-    the model gets `event_miles` -- distance from station to venue -- and learns
-    the decay itself. A station four miles from Levi's and one twenty-five miles
-    away receive the same event with different distances, and the split falls
-    where the data puts it.
+    The corridor model hard-coded which corridors a venue could affect, which
+    does not scale. Here the model gets `event_miles`, the distance from station
+    to venue, and learns the decay itself.
 
-    Beyond `max_miles` no event is attached at all: those rows are the vast
-    majority, and letting them carry a far-away concert would drown the signal
-    that does exist near the venue.
+    Beyond `max_miles` no event is attached. Those rows are the large majority,
+    and letting them carry a far-away concert drowns the signal near the
+    venue.
     """
     from forecast.corridors import VENUES
 
     path = os.path.expanduser(events_path)
     if not os.path.exists(path):
-        logger.warning("no events at %s -- event features disabled", path)
+        logger.warning("no events at %s, event features disabled", path)
         df["hours_since_event"] = np.nan
         df["event_capacity"] = 0.0
         df["event_miles"] = np.nan
@@ -350,8 +341,8 @@ EVENT_WINDOW_AFTER_H = 6.0
 
 # Fixed vocabularies. A class that never occurs in a training sample would
 # otherwise be absent from the model's category list and arrive at serve time as
-# a silent NaN -- "unknown" weather is exactly that case, since the archive
-# covers every training row but the live forecast can run short of the horizon.
+# a silent NaN. "unknown" weather is that case: the archive covers every
+# training row, but the live forecast can run short of the horizon.
 WX_CLASSES = ["dry", "rain_light", "rain_heavy", "unknown"]
 HOLIDAY_CLASSES = ["none", "adjacent", "holiday"]
 
