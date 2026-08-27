@@ -14,6 +14,10 @@
 # over 1,500 files that there is no reason to spend nightly.
 set -euo pipefail
 
+# launchd starts jobs with a minimal PATH that has neither Homebrew nor
+# /usr/local on it, so osmium is not found and the geometry step dies.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA="${TRAFFIC_DATA:-$HOME/traffic-data}"
 PY="${PYTHON:-/Users/Tom/miniforge3/bin/python}"
