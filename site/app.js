@@ -400,6 +400,64 @@ async function forecastRoute() {
 }
 $('go').onclick = forecastRoute;
 
+// ---- keeping the map and the plan on the same clock -------------------------
+// The map holds one frame per hour: build_data.py keeps only the minute==0 rows
+// of a forecast that is really 15-minute. The planner asks in 15-minute steps.
+// So the two can only ever meet on the hour, and the rounding has to land
+// somewhere.
+//
+// It lands on the map. Dragging the slider writes the form exactly, because a
+// slot is always a whole hour and the time input holds that without loss. A
+// planned drive only nudges the slider, and never rewrites the time the user
+// typed: rounding 8:45 down to 8:00 in the form would quietly answer a
+// different question from the one still on screen.
+
+// The API returns "2026-08-28 08:05:20.112290435" -- a space where ISO wants a
+// T, and more fractional digits than Date parses on every engine.
+function parseLocal(v) {
+  if (!v) return NaN;
+  return new Date(String(v).replace(' ', 'T').replace(/(\.\d{3})\d+$/, '$1')).getTime();
+}
+
+function nearestSlot(when) {
+  const t = parseLocal(when);
+  if (!state.net || !Number.isFinite(t)) return -1;
+  let best = -1, gap = Infinity;
+  state.net.slots.forEach((iso, i) => {
+    const d = Math.abs(parseLocal(iso) - t);
+    if (d < gap) { gap = d; best = i; }
+  });
+  return best;
+}
+
+// Follows departure, not arrival: departure is when the driving starts, and
+// under "arrive by" the server is the only thing that knows it. A drive spans
+// slots anyway -- 8:20 to 8:50 straddles two -- so one frame is always a
+// simplification, and the departure frame is the honest one to show.
+function syncMapToDrive(depart) {
+  const i = nearestSlot(depart);
+  if (i < 0) return '';
+  if (i !== state.slot) {
+    state.slot = i;
+    $('slot').value = i;
+    requestDraw();
+  }
+  const slotAt = new Date(parseLocal(state.net.slots[i]));
+  const driveAt = new Date(parseLocal(depart));
+  const label = `${slotAt.toLocaleDateString([], { weekday: 'long' })} ${fmtHM(slotAt)}`;
+  return Math.abs(slotAt - driveAt) < 60000
+    ? ` The map is showing ${label}, the hour this drive starts in.`
+    : ` The map is showing ${label}, the closest hour it has to leaving at ${fmtHM(driveAt)}.`;
+}
+
+// Lossless in this direction: a slot is a whole hour, which step="900" holds.
+function syncPlanToMap() {
+  const iso = state.net && state.net.slots[state.slot];
+  if (!iso) return;
+  $('day').value = iso.slice(0, 10);
+  $('time').value = iso.slice(11, 16);
+}
+
 function showRoute(data) {
   const s = data.summary;
   $('answer').classList.add('on');
@@ -415,9 +473,13 @@ function showRoute(data) {
     `${s.freeway_minutes.toFixed(0)} min forecast · ${s.freeway_miles.toFixed(1)} mi on ${s.stations_used} detectors`;
   $('keyE').textContent =
     `${s.surface_minutes.toFixed(0)} min inferred · ${s.surface_miles.toFixed(1)} mi`;
+  const departAt = state.mode === 'arrive' && data.arrive_by
+    ? data.arrive_by.depart : s.depart;
+  const mapNote = syncMapToDrive(departAt);
   $('caveat').innerHTML = `<b>${Math.round(s.measured_share * 100)}% of this journey is a measured forecast.</b>
     The rest is surface street, inferred by spreading nearby freeway conditions onto local roads,
-    the thin lines on the map. That part has no ground truth and is excluded from the published accuracy.`;
+    the thin lines on the map. That part has no ground truth and is excluded from the published accuracy.`
+    + mapNote;
 
   routeLayer.clearLayers();
   const pts = [];
@@ -510,7 +572,12 @@ function drawProfile(rows) {
   });
   state.slot = peak >= 0 ? peak : 8;
   $('slot').value = state.slot;
-  $('slot').oninput = e => { state.slot = +e.target.value; requestDraw(); };
+  syncPlanToMap();
+  $('slot').oninput = e => {
+    state.slot = +e.target.value;
+    syncPlanToMap();
+    requestDraw();
+  };
 
   ['from', 'to'].forEach(attachSearch);
   restoreFolds();
