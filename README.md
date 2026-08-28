@@ -168,5 +168,6 @@ scripts/       nightly.sh
 
 Traffic and roadwork data courtesy of the California Department of
 Transportation (Caltrans) Performance Measurement System. Weather from
-[Open-Meteo](https://open-meteo.com/). Map data (c) OpenStreetMap contributors,
-tiles (c) CARTO. Routing by [OSRM](https://project-osrm.org/).
+[Open-Meteo](https://open-meteo.com/). Map data (c) OpenStreetMap contributors.
+Basemap tiles (c) Esri, HERE, Garmin and the OpenStreetMap contributors.
+Routing by [OSRM](https://project-osrm.org/).

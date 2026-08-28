@@ -63,8 +63,18 @@ const state = {
 // preferCanvas matters here: 60k ways as individual SVG nodes is a slideshow.
 const map = L.map('map', { preferCanvas: true, zoomControl: true })
   .setView([37.72, -122.15], 10);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 18,
+// Esri's gray canvas, which needs no key. CARTO's free tiles now come back
+// stamped API KEY REQUIRED. Base and labels are separate layers here; both sit
+// in the tile pane, so the road colours draw over them as before.
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+const basemapAttr =
+  'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
+// The canvas stops at z16; let Leaflet upscale rather than show blank tiles.
+L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+  attribution: basemapAttr, maxZoom: 18, maxNativeZoom: 16,
+}).addTo(map);
+L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, {
+  maxZoom: 18, maxNativeZoom: 16,
 }).addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
 const pinLayer = L.layerGroup().addTo(map);
