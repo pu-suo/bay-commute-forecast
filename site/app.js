@@ -512,6 +512,19 @@ function showRoute(data) {
   $('answerHead').textContent = state.mode === 'arrive' && data.arrive_by
     ? `Leave at ${fmtHM(new Date(data.arrive_by.depart))}` : 'Forecast';
 
+  // The spread of days behind the single number. Not an error bar on the model:
+  // it is how much this drive varies between matching weekdays, which is the
+  // question a lone figure quietly answers "not at all".
+  const band = $('band');
+  if (s.typical_fast != null && s.typical_slow != null) {
+    const day = new Date(parseLocal(s.depart))
+      .toLocaleDateString([], { weekday: 'long' });
+    band.innerHTML = `usually <b>${Math.round(s.typical_fast)}\u2013${Math.round(s.typical_slow)} min</b> on a ${day}`;
+    band.hidden = false;
+  } else {
+    band.hidden = true; band.innerHTML = '';
+  }
+
   const pct = s.total_minutes ? s.freeway_minutes / s.total_minutes * 100 : 0;
   $('barM').style.width = pct + '%';
   $('barE').style.width = (100 - pct) + '%';

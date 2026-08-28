@@ -186,6 +186,9 @@ button.go:disabled { opacity: .5; cursor: default; }
   border-left: 2px solid var(--accent); font-size: 12px; color: var(--ink-2); }
 .evnote b { color: var(--ink); font-weight: 600; }
 
+.band { margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+.band b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
 table.segs { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
 table.segs th { text-align: left; font: 600 10px var(--sans); letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-3); padding-bottom: 5px; }

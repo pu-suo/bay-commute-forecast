@@ -85,6 +85,10 @@ class Forecast:
                      fc["ts"].to_numpy().astype("datetime64[s]").astype(np.int64))
         self.mph = dict(zip(fc["key"], fc["mph"]))
         self.seasonal = dict(zip(fc["key"], fc["seasonal_speed"]))
+        # Tables written before the spread was published have no column; the
+        # band is then simply unavailable rather than invented.
+        self.sd = (dict(zip(fc["key"], fc["seasonal_sd"]))
+                   if "seasonal_sd" in fc.columns else {})
         self.freeflow = (pd.read_parquet(os.path.join(d, "freeflow.parquet"))
                            .set_index("station")["freeflow"].to_dict())
         self.meta = stations_meta
@@ -97,6 +101,10 @@ class Forecast:
 
     def speed(self, station, ts):
         return self.mph.get(self._key(station, ts))
+
+    def spread(self, station, ts):
+        """Historical sd of this detector at this weekday and time, in mph."""
+        return self.sd.get(self._key(station, ts))
 
     def ratio(self, station, ts):
         """predicted / free-flow for one station: the spread model's input."""
@@ -170,6 +178,26 @@ def build_spans(matched, route_mi):
     return spans
 
 
+# The band is a spread of days, not a confidence interval on the model. Each
+# detector carries seasonal_sd, the historical variation at this weekday and
+# time; converted to minutes through the local derivative of miles/speed
+# (d_min = miles * 60 * sd / mph^2) rather than by repricing at speed-sd, which
+# explodes as speed falls and produced a 78-minute upper edge on a drive whose
+# worst real Friday was 57.
+#
+# Summing those per-span deviations as if perfectly correlated still overstates
+# the route, so the sum is scaled. The two factors were fitted on 20 route-days
+# against the p10-p90 of real matching weekdays: mean edge error 3.4 min on the
+# slow side and 2.5 on the fast, over drives of 27 to 70 minutes. They are
+# asymmetric because the real spread is: a day can go far more wrong than right.
+#
+# Known weakness: the Bay Bridge runs wider than this band. Its bottleneck is
+# the toll plaza, upstream of every detector, the same reason it is the one
+# corridor in the accuracy table that loses to the seasonal baseline.
+BAND_SLOW = 0.40
+BAND_FAST = 0.25
+
+
 def price(spans, fc, pts, cum_mi, cum_min, depart):
     """Walk the spans in order, advancing the clock, pricing each by its evidence."""
     t = pd.Timestamp(depart)
@@ -186,8 +214,10 @@ def price(spans, fc, pts, cum_mi, cum_min, depart):
             mph = fc.speed(sp["sensor_id"], t)
             if mph:
                 minutes = miles / mph * 60.0
+                sd = fc.spread(sp["sensor_id"], t) or 0.0
                 out.append({**sp, "miles": miles, "mph": float(mph),
                             "minutes": minutes, "arrive": t, "estimate": False,
+                            "minutes_sd": miles * 60.0 * sd / max(float(mph), MIN_SPEED_MPH) ** 2,
                             "lat": lat, "lon": lon})
                 t += pd.Timedelta(minutes=minutes)
                 continue
@@ -201,6 +231,7 @@ def price(spans, fc, pts, cum_mi, cum_min, depart):
         est_speed = max(ff_speed * factor, MIN_SPEED_MPH)
         minutes = miles / est_speed * 60.0
         out.append({**sp, "miles": miles, "mph": est_speed, "minutes": minutes,
+                    "minutes_sd": 0.0,
                     "arrive": t, "estimate": True, "spread_factor": factor,
                     "spread_stations": n, "freeway_ratio": ratio,
                     "lat": lat, "lon": lon})
@@ -246,6 +277,20 @@ def price_at(prepared, depart, fc):
         "stations_used": int(len(fwy)),
     }
     summary["measured_share"] = (summary["freeway_minutes"] / total) if total else 0.0
+
+    # The band, scaled onto the surface share too. Surface speed is derived from
+    # the freeway ratio, so a day that is slow on the freeway is slow on the
+    # arterials feeding it; holding surface fixed would understate the spread on
+    # exactly the city routes where surface is most of the trip.
+    fw = summary["freeway_minutes"]
+    if len(fwy) and fw > 0:
+        sd_min = float(fwy["minutes_sd"].sum()) * (1.0 + summary["surface_minutes"] / fw)
+        summary["typical_slow"] = total + BAND_SLOW * sd_min
+        summary["typical_fast"] = max(total - BAND_FAST * sd_min, 1.0)
+    else:
+        # No detector on the route: there is no measured spread to report, and a
+        # made-up one would be worse than none.
+        summary["typical_slow"] = summary["typical_fast"] = None
     return segs, summary
 
 

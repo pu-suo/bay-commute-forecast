@@ -122,7 +122,10 @@ def main(argv=None):
 
     out = os.path.expanduser(a.out)
     os.makedirs(out, exist_ok=True)
-    cols = ["station", "ts", "mph", "seasonal_speed"]
+    # seasonal_sd rides along so route.py can price a slow/fast day. It is the
+    # historical spread of this detector at this weekday and time, which is
+    # exactly the "how much do Fridays differ" question a point estimate hides.
+    cols = ["station", "ts", "mph", "seasonal_speed", "seasonal_sd"]
     path = os.path.join(out, "forecast.parquet")
     df[cols].to_parquet(path, index=False, compression="zstd")
 

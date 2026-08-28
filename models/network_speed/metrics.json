@@ -1,6 +1,5 @@
 {
- "rounds": 302,
- "target": "pace",
+ "rounds": 575,
  "train_rows": 9464737,
  "features": [
   "seasonal_speed",
@@ -74,128 +73,128 @@
    "slice": "all",
    "n": 1685219,
    "baseline_mph": 3.048142910003662,
-   "model_mph": 2.880844121588828,
-   "gain_pct": 5.488548055466108
+   "model_mph": 2.8796797960164264,
+   "gain_pct": 5.526745922389619
   },
   {
    "stations": "seen",
    "slice": "peak",
    "n": 490440,
    "baseline_mph": 4.625108242034912,
-   "model_mph": 4.297912528613521,
-   "gain_pct": 7.074336346286988
+   "model_mph": 4.298352063979235,
+   "gain_pct": 7.064833101331143
   },
   {
    "stations": "seen",
    "slice": "congested",
    "n": 46721,
    "baseline_mph": 11.594376564025879,
-   "model_mph": 9.683912886734158,
-   "gain_pct": 16.477502405945295
+   "model_mph": 9.655227919310422,
+   "gain_pct": 16.724906544195704
   },
   {
    "stations": "seen",
    "slice": "peak+congested",
    "n": 41091,
    "baseline_mph": 11.504498481750488,
-   "model_mph": 9.557960760515817,
-   "gain_pct": 16.91979641113823
+   "model_mph": 9.54333963438237,
+   "gain_pct": 17.04688692409401
   },
   {
    "stations": "seen",
    "slice": "holiday",
    "n": 152721,
    "baseline_mph": 3.532724380493164,
-   "model_mph": 2.982261548286568,
-   "gain_pct": 15.581822211948278
+   "model_mph": 2.9423721151222924,
+   "gain_pct": 16.710963035515928
   },
   {
    "stations": "seen",
    "slice": "rain",
    "n": 39182,
    "baseline_mph": 3.967381477355957,
-   "model_mph": 3.5433280392347815,
-   "gain_pct": 10.688496695905936
+   "model_mph": 3.5238600784758796,
+   "gain_pct": 11.179197196223749
   },
   {
    "stations": "seen",
    "slice": "near event",
    "n": 34370,
    "baseline_mph": 3.888671875,
-   "model_mph": 3.639017581824327,
-   "gain_pct": 6.420040085682804
+   "model_mph": 3.650184103070811,
+   "gain_pct": 6.132884943633593
   },
   {
    "stations": "seen",
    "slice": "worst 5%",
    "n": 84261,
    "baseline_mph": 20.307567596435547,
-   "model_mph": 19.475021407848537,
-   "gain_pct": 4.099684438490512
+   "model_mph": 19.467148569244443,
+   "gain_pct": 4.138452442421595
   },
   {
    "stations": "unseen",
    "slice": "all",
    "n": 707294,
    "baseline_mph": 2.874061107635498,
-   "model_mph": 2.7089617304715445,
-   "gain_pct": 5.744463008296349
+   "model_mph": 2.699770533331755,
+   "gain_pct": 6.064261258770952
   },
   {
    "stations": "unseen",
    "slice": "peak",
    "n": 205698,
    "baseline_mph": 4.425305366516113,
-   "model_mph": 4.1668513867520725,
-   "gain_pct": 5.840364864301161
+   "model_mph": 4.147305502477325,
+   "gain_pct": 6.282049282796678
   },
   {
    "stations": "unseen",
    "slice": "congested",
    "n": 17206,
    "baseline_mph": 13.148380279541016,
-   "model_mph": 11.85904421183428,
-   "gain_pct": 9.806044853395
+   "model_mph": 11.858751411420188,
+   "gain_pct": 9.808271746805955
   },
   {
    "stations": "unseen",
    "slice": "peak+congested",
    "n": 12865,
    "baseline_mph": 13.390597343444824,
-   "model_mph": 11.781893321297057,
-   "gain_pct": 12.013683787865412
+   "model_mph": 11.915251069283853,
+   "gain_pct": 11.017777895346887
   },
   {
    "stations": "unseen",
    "slice": "holiday",
    "n": 65404,
    "baseline_mph": 3.3965721130371094,
-   "model_mph": 2.826356848808732,
-   "gain_pct": 16.7879628417048
+   "model_mph": 2.777926125804888,
+   "gain_pct": 18.21383343688373
   },
   {
    "stations": "unseen",
    "slice": "rain",
    "n": 17509,
    "baseline_mph": 3.5062687397003174,
-   "model_mph": 3.1713230447886507,
-   "gain_pct": 9.55276733694676
+   "model_mph": 3.157760533224894,
+   "gain_pct": 9.939574868559859
   },
   {
    "stations": "unseen",
    "slice": "near event",
    "n": 8451,
    "baseline_mph": 3.9373748302459717,
-   "model_mph": 3.6626069508469246,
-   "gain_pct": 6.978453696822208
+   "model_mph": 3.666658754817148,
+   "gain_pct": 6.875547467547354
   },
   {
    "stations": "unseen",
    "slice": "worst 5%",
    "n": 35365,
    "baseline_mph": 20.02984619140625,
-   "model_mph": 19.159410610579933,
-   "gain_pct": 4.3456927851985965
+   "model_mph": 19.109537386857777,
+   "gain_pct": 4.594687326871879
   }
  ]
 }
