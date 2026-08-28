@@ -1,13 +1,20 @@
 # Fly config for the API. The static site is on Pages; this serves /api/* only.
 #
-# The machine stops when idle. Nothing on the landing page touches this service:
-# the map, the week ahead and the accuracy page are static files, and the page
-# probes /api/health after rendering rather than before. So a cold start is only
-# ever paid by someone who clicks "Forecast this drive" on an idle app, and it
-# costs a few seconds rather than a blank screen.
+# One machine stays up. Nothing on the landing page touches this service: the map,
+# the week ahead and the accuracy page are static files, and the page probes
+# /api/health after rendering rather than before. Only "Forecast this drive" needs
+# the API -- but a cold start is far too slow to put in front of that click.
 #
-# Measured in the container: osrm-routed ready in 1s, API up immediately after.
-# Fly's VM start adds about a second on top.
+# Measured on Fly, twice, on 2026-08-28: osrm-routed answers 76s after boot. It
+# reads a ~930 MB graph off cold storage on a shared-cpu-1x. The 1s figure this
+# file used to quote was measured against a warm local page cache and does not
+# describe a Fly cold start. Scaling to zero meant every idle visitor waited 76s
+# behind a "Route planning unavailable" banner, so we no longer scale to zero.
+#
+# Fly clamps http_service check grace_period to 60s, so it cannot cover the 76s
+# load. That is survivable -- the check goes warning, then passes once OSRM is up,
+# and the entrypoint waits OSRM_WAIT (300s) rather than exiting -- but it is why
+# a restart still shows one failing check for about a minute.
 
 app = "bay-commute-forecast"
 primary_region = "sjc"
@@ -35,7 +42,7 @@ primary_region = "sjc"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [[http_service.checks]]
     interval = "30s"
