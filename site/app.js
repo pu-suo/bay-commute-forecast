@@ -24,7 +24,30 @@ const ALPHA = 0.5;
 // the base is read from a config file the deploy writes. Missing or empty means
 // same-origin, which is how the local server runs.
 let API = '';
+let apiUp = null;          // null until probed
 const api = path => API + path;
+
+// A missing API answers with the host's own 404 page, so res.json() reports a
+// stray "<" rather than anything a visitor can act on. Check the response
+// before trusting it is JSON.
+async function getJSON(url) {
+  let res;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new Error('the forecast service is unreachable');
+  }
+  const type = res.headers.get('content-type') || '';
+  if (!type.includes('application/json')) {
+    throw new Error(res.status === 404
+      ? 'the forecast service is not deployed at this address'
+      : `the forecast service returned ${res.status}`);
+  }
+  const body = await res.json();
+  if (res.status === 429) throw new Error('too many requests just now, try again shortly');
+  if (!res.ok || body.error) throw new Error(body.error || `request failed (${res.status})`);
+  return body;
+}
 
 const $ = id => document.getElementById(id);
 const fmtHM = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -223,8 +246,7 @@ function attachSearch(which) {
     // one request per pause in typing, not one per keystroke
     timer = setTimeout(async () => {
       try {
-        const r = await fetch(api('/api/geocode?q=') + encodeURIComponent(q));
-        results = (await r.json()).results || [];
+        results = (await getJSON(api('/api/geocode?q=') + encodeURIComponent(q))).results || [];
       } catch { results = []; }
       if (!results.length) return close();
       list.innerHTML = results.map((x, i) => `
@@ -249,6 +271,22 @@ function attachSearch(which) {
     } else if (e.key === 'Escape') close();
   });
   input.addEventListener('blur', () => setTimeout(close, 120));
+}
+
+async function probeApi() {
+  try {
+    await getJSON(api('/api/health'));
+    apiUp = true;
+  } catch (err) {
+    apiUp = false;
+    $('go').disabled = true;
+    $('go').textContent = 'Route planning unavailable';
+    $('planNote').textContent =
+      'Route planning needs the forecast service, which is not reachable from here. '
+      + 'The map, the week ahead and the accuracy page all work without it.';
+    $('planNote').hidden = false;
+    ['from', 'to'].forEach(id => { $(id).disabled = true; });
+  }
 }
 
 function dropPin(which) {
@@ -303,16 +341,17 @@ async function forecastRoute() {
   const key = state.mode === 'leave' ? 'depart' : 'arrive';
   $('go').disabled = true; $('go').textContent = 'Working…';
   try {
-    const url = api(`/api/route?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&${key}=${when}`);
-    const data = await (await fetch(url)).json();
-    if (data.error) throw new Error(data.error);
+    const data = await getJSON(
+      api(`/api/route?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&${key}=${when}`));
     showRoute(data);
-    const p = await (await fetch(api(
-      `/api/profile?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&date=${$('day').value}`))).json();
+    const p = await getJSON(api(
+      `/api/profile?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}&date=${$('day').value}`));
     drawProfile(p.profile || []);
   } catch (err) {
     $('answer').classList.add('on');
-    $('caveat').textContent = 'Could not route: ' + err.message;
+    $('mins').textContent = '--';
+    $('arr').textContent = '--';
+    $('caveat').textContent = 'Could not plan this drive: ' + err.message + '.';
   } finally {
     $('go').disabled = false; $('go').textContent = 'Forecast this drive';
   }
@@ -430,6 +469,7 @@ function drawProfile(rows) {
   $('slot').oninput = e => { state.slot = +e.target.value; requestDraw(); };
 
   ['from', 'to'].forEach(attachSearch);
+  await probeApi();
   drawNetwork();
   renderWeek(cor.corridors[0].slug);
   renderFreshness();
