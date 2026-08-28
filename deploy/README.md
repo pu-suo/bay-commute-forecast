@@ -3,27 +3,30 @@
 Two halves. Static files go to GitHub Pages; the routing API runs in one
 container because it needs OSRM and the forecast table.
 
+## What needs an account
+
+Fly, and nothing else. No API keys are required: the basemap (Esri), the
+geocoder (Photon) and the routing engine (OSRM, in the container) are all
+keyless, and the PeMS credentials stay on the machine that collects data.
+
+`GOOGLE_MAPS_API_KEY` is optional. Set it for better place search; leave it
+unset and Photon answers.
+
 ## One-time
 
 ```bash
-gh repo create bay-commute-forecast --public --source=. --remote=origin --push
+brew install flyctl
+fly auth signup                 # or: fly auth login
 
-# Pages: Settings > Pages > Deploy from a branch > gh-pages > / (root)
-bash deploy/publish.sh          # creates the branch on first run
-
-# API
 cd deploy
-fly launch --no-deploy --name bay-commute-forecast
-fly secrets set GOOGLE_MAPS_API_KEY=...          # optional; Photon otherwise
-fly deploy
+fly launch --no-deploy --copy-config --name bay-commute-forecast
+fly deploy                      # 15-20 min: builds the OSRM graph
 ```
 
-Then point the two halves at each other:
-
-- `fly.toml`: set `ALLOW_ORIGIN` to your Pages origin and `SERVE_URL` to
-  `https://<user>.github.io/bay-commute-forecast/data`, and `fly deploy` again.
-- `site/config.json`: set `api_base` to `https://bay-commute-forecast.fly.dev`,
-  then re-run `deploy/publish.sh`.
+`fly.toml` and `site/config.json` already carry the right hostnames. If the app
+name is taken, pick another and update `api_base` in `site/config.json` and
+`ALLOW_ORIGIN`/`SERVE_URL` in `fly.toml` to match, then re-run
+`bash deploy/publish.sh`.
 
 ## Every night
 

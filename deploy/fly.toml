@@ -17,9 +17,9 @@ primary_region = "sjc"
   PORT = "8080"
   BEHIND_PROXY = "1"
   REFRESH_MIN = "60"
-  # Set these for your own deploy:
-  # ALLOW_ORIGIN = "https://<user>.github.io"
-  # SERVE_URL    = "https://<user>.github.io/bay-commute-forecast/data"
+  # Change both if you fork this or the Fly app name is taken.
+  ALLOW_ORIGIN = "https://pu-suo.github.io"
+  SERVE_URL = "https://pu-suo.github.io/bay-commute-forecast/data"
 
 [http_service]
   internal_port = 8080
