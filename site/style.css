@@ -87,7 +87,34 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   background: var(--panel); border-left: 1px solid var(--line);
   overflow-y: auto; display: flex; flex-direction: column;
 }
+/* Children must not shrink. The panel is a scrolling flex column, and flex
+   items default to shrinking, which squeezed the week grid into a sliver with
+   its own scrollbar instead of letting the panel scroll. */
+.panel > section, .panel > details, .panel > footer { flex: none; }
 .panel > section { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+
+/* Collapsible sections. Plan a drive is deliberately not one of them: it is
+   what the page is for and should never need a click to reach. */
+.fold { border-bottom: 1px solid var(--line); }
+.fold > summary {
+  padding: 16px 20px; cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 8px; user-select: none;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after {
+  content: ""; margin-left: auto; width: 7px; height: 7px;
+  border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3);
+  transform: rotate(45deg) translate(-2px, -2px); transition: transform .15s ease;
+}
+.fold[open] > summary::after { transform: rotate(225deg) translate(-2px, -2px); }
+.fold > summary:hover { background: var(--panel-2); }
+.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fold > summary h2 { margin: 0; }
+.fold > summary #weekName { color: var(--ink-2); font-weight: 400; letter-spacing: 0; }
+.fold > *:not(summary) { padding: 0 20px 18px; }
+@media (prefers-reduced-motion: reduce) {
+  .fold > summary::after { transition: none; }
+}
 
 .masthead { display: grid; gap: 2px; }
 .masthead h1 {
@@ -165,7 +192,7 @@ table.segs tr.est td { color: var(--ink-3); font-style: italic; }
 canvas.chart { width: 100%; height: 110px; display: block; }
 
 /* ---- week grid ---------------------------------------------------------- */
-.week { overflow-x: auto; }
+.week > div { overflow-x: auto; }
 table.grid { border-collapse: collapse; font-size: 10px; }
 table.grid th { font: 600 9px var(--sans); letter-spacing: .08em; color: var(--ink-3);
   text-transform: uppercase; padding: 0 3px 4px; }
@@ -184,7 +211,7 @@ table.grid td:hover { outline: 2px solid var(--ink); outline-offset: -2px; }
 
 .events li { list-style: none; display: grid; grid-template-columns: 62px 1fr;
   gap: 8px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12px; }
-.events ul { margin: 0; padding: 0; }
+.events ul { margin: 0; list-style: none; }
 .events .t { font: 600 11px var(--mono); color: var(--ink-3); }
 .events .v { color: var(--ink-3); font-size: 11px; }
 

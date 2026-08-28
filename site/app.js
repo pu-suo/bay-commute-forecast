@@ -179,7 +179,14 @@ function renderCorridors() {
       <span class="vs ${cls}">${d == null ? '' : (d > 0 ? '+' : '') + d.toFixed(1)}</span></div>`;
   }).join('');
   document.querySelectorAll('.corridor').forEach(el =>
-    el.onclick = () => renderWeek(el.dataset.slug));
+    el.onclick = () => {
+      renderWeek(el.dataset.slug);
+      // Picking a corridor is a request to see its week, so open that section
+      // even if it was collapsed, and scroll it into view.
+      const fold = $('foldWeek');
+      if (!fold.open) fold.open = true;
+      fold.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
 }
 
 function renderWeek(slug) {
@@ -207,6 +214,17 @@ function renderWeek(slug) {
     html += '</tr>';
   }
   $('week').innerHTML = html + '</table>';
+}
+
+// Remember which sections the visitor left open. Cheap, and the alternative is
+// re-collapsing the thing they were reading every time the page reloads.
+function restoreFolds() {
+  document.querySelectorAll('details.fold').forEach(d => {
+    const saved = localStorage.getItem('fold:' + d.id);
+    if (saved !== null) d.open = saved === '1';
+    d.addEventListener('toggle', () =>
+      localStorage.setItem('fold:' + d.id, d.open ? '1' : '0'));
+  });
 }
 
 function renderFreshness() {
@@ -479,6 +497,7 @@ function drawProfile(rows) {
   $('slot').oninput = e => { state.slot = +e.target.value; requestDraw(); };
 
   ['from', 'to'].forEach(attachSearch);
+  restoreFolds();
   await probeApi();
   drawNetwork();
   renderWeek(cor.corridors[0].slug);

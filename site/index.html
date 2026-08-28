@@ -72,20 +72,20 @@
       <table class="segs" id="segs"></table>
     </section>
 
-    <section>
-      <h2>The nine named commutes</h2>
+    <details class="fold" id="foldCommutes" open>
+      <summary><h2>The nine named commutes</h2></summary>
       <div class="corridors" id="corridors"></div>
-    </section>
+    </details>
 
-    <section class="week">
-      <h2>Week ahead <span id="weekName" style="color:var(--ink-2)"></span></h2>
+    <details class="fold week" id="foldWeek" open>
+      <summary><h2>Week ahead <span id="weekName"></span></h2></summary>
       <div id="week"></div>
-    </section>
+    </details>
 
-    <section class="events">
-      <h2>Events in the horizon</h2>
+    <details class="fold events" id="foldEvents">
+      <summary><h2>Events in the horizon</h2></summary>
       <ul id="events"></ul>
-    </section>
+    </details>
 
     <footer>
       <span id="freshness"></span>

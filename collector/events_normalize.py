@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 import sys
 from datetime import datetime
 
@@ -72,6 +73,18 @@ def _plausible_time(dt):
     return dt.minute in PLAUSIBLE_MINUTES
 
 
+def _dedupe_key(title):
+    """
+    Title reduced to letters and digits, for matching the same event twice.
+
+    Venues are inconsistent about punctuation and accents: Stanford listed the
+    same game as "Stanford vs. Hawaii" and "Stanford vs. Hawai'i" four hours
+    apart, and a raw lowercase comparison kept both.
+    """
+    folded = unicodedata.normalize("NFKD", title.lower())
+    return "".join(c for c in folded if c.isalnum())[:40]
+
+
 def normalize(rows):
     """Clean, retime and dedupe raw crawler rows. Returns (events, stats)."""
     stats = {"in": len(rows), "non_event": 0, "cancelled": 0,
@@ -112,7 +125,7 @@ def normalize(rows):
     # "first announced by", which is what a point-in-time feature needs.
     best = {}
     for e in cleaned:
-        key = (e["venue"], e["start"][:10], e["title"].lower()[:50])
+        key = (e["venue"], e["start"][:10], _dedupe_key(e["title"]))
         prior = best.get(key)
         if prior is None or e["captured_at"] < prior["captured_at"]:
             best[key] = e
