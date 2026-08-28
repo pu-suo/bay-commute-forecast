@@ -20,8 +20,16 @@ fly auth signup                 # or: fly auth login
 
 cd deploy
 fly launch --no-deploy --copy-config --name bay-commute-forecast
-fly deploy                      # 15-20 min: builds the OSRM graph
+
+# Deploy from the REPO ROOT, not from deploy/. The Dockerfile copies forecast/
+# and site/, which live at the root, so the build context has to be the root.
+# Running `fly deploy` inside deploy/ fails on COPY forecast/.
+cd ..
+fly deploy --config deploy/fly.toml --dockerfile deploy/Dockerfile
 ```
+
+The first deploy takes 15-20 minutes because it downloads a Geofabrik extract
+and prepares the OSRM graph. Later ones reuse that layer.
 
 `fly.toml` and `site/config.json` already carry the right hostnames. If the app
 name is taken, pick another and update `api_base` in `site/config.json` and
