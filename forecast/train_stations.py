@@ -51,6 +51,30 @@ PARAMS = {
 NUM_ROUNDS = 1200
 EARLY_STOPPING = 60
 
+# Travel time is miles/speed, so the product integrates 1/speed, not speed. L1 on
+# mph weights every detector alike; L1 on pace weights them the way the route
+# engine does. One mph of error at 20 mph costs about ten times the minutes it
+# costs at 65 mph, and congestion is exactly where the model is asked to be
+# right. Training on pace makes the loss agree with route.py.
+#
+# Bounds mirror the clamp predict_network already applies to mph, so a tree
+# extrapolating past anything physical is bounded in the same place either way.
+PACE_CLIP = (60.0 / 80.0, 60.0 / 5.0)   # 0.75 .. 12 min/mile
+
+
+def to_label(speed, target):
+    """Observed mph -> the quantity the model is fitted on."""
+    if target == "pace":
+        return np.clip(60.0 / np.asarray(speed, dtype=float), *PACE_CLIP)
+    return speed
+
+
+def to_mph(raw, target):
+    """Model output -> mph, so every metric below stays comparable."""
+    if target == "pace":
+        return 60.0 / np.clip(np.asarray(raw, dtype=float), *PACE_CLIP)
+    return raw
+
 
 def load(data_dir, seasonal, meta, weather_dir, events_path,
          start, end, stations, station_frac, every_nth, seed, label):
@@ -137,6 +161,9 @@ def main(argv=None):
     p.add_argument("--train-station-frac", type=float, default=0.20)
     p.add_argument("--test-station-frac", type=float, default=0.12)
     p.add_argument("--every-nth", type=int, default=6, help="6 -> 30-minute rows")
+    p.add_argument("--target", default="speed", choices=("speed", "pace"),
+                   help="what the model is fitted on. 'pace' (min/mile) makes "
+                        "the loss match travel time; see PACE_CLIP note above")
     p.add_argument("--out", default="models/network")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
@@ -164,9 +191,10 @@ def main(argv=None):
     align_categories([train, valid, seen, unseen])
 
     feats = NUMERIC + CATEGORICAL
-    dtrain = lgb.Dataset(train[feats], label=train[TARGET],
+    logger.info("fitting on %s", "pace (min/mile)" if a.target == "pace" else "speed (mph)")
+    dtrain = lgb.Dataset(train[feats], label=to_label(train[TARGET], a.target),
                          categorical_feature=CATEGORICAL, free_raw_data=True)
-    dvalid = lgb.Dataset(valid[feats], label=valid[TARGET],
+    dvalid = lgb.Dataset(valid[feats], label=to_label(valid[TARGET], a.target),
                          categorical_feature=CATEGORICAL, reference=dtrain)
     started = time.time()
     model = lgb.train(PARAMS, dtrain, num_boost_round=NUM_ROUNDS, valid_sets=[dvalid],
@@ -176,8 +204,8 @@ def main(argv=None):
 
     rows = []
     for name, frame in (("seen", seen), ("unseen", unseen)):
-        pred = model.predict(frame[feats], num_iteration=model.best_iteration)
-        rows += evaluate(frame, pred, name)
+        raw = model.predict(frame[feats], num_iteration=model.best_iteration)
+        rows += evaluate(frame, to_mph(raw, a.target), name)
     report = pd.DataFrame(rows)
 
     logger.info("\n%-9s%-16s%12s%11s%10s%8s", "stations", "slice", "n",
@@ -196,7 +224,7 @@ def main(argv=None):
     os.makedirs(out, exist_ok=True)
     model.save_model(os.path.join(out, "model.txt"))
     with open(os.path.join(out, "metrics.json"), "w") as f:
-        json.dump({"rounds": model.best_iteration,
+        json.dump({"rounds": model.best_iteration, "target": a.target,
                    "train_rows": len(train), "features": feats,
                    "categories": {c: list(map(str, train[c].cat.categories))
                                   for c in CATEGORICAL},

@@ -116,8 +116,11 @@ def main(argv=None):
     meta = pd.read_csv(os.path.join(data, "_meta", "d04_meta.txt"), sep="\t")
     meta = meta[meta["Type"] == "ML"].rename(columns={"ID": "sensor_id"})
     model = lgb.Booster(model_file=os.path.expanduser(a.model))
-    cats = json.load(open(os.path.join(os.path.dirname(os.path.expanduser(a.model)),
-                                       "metrics.json")))["categories"]
+    sidecar = json.load(open(os.path.join(os.path.dirname(os.path.expanduser(a.model)),
+                                          "metrics.json")))
+    cats = sidecar["categories"]
+    # Models fitted on pace answer in min/mile; everything below speaks mph.
+    target = sidecar.get("target", "speed")
 
     corridor_stations, weights, totals = {}, {}, {}
     wanted = set()
@@ -140,7 +143,10 @@ def main(argv=None):
     for c in CATEGORICAL:
         vals = df[c].astype(str)
         df[c] = pd.Categorical(vals.where(vals.isin(cats[c])), categories=cats[c])
-    df["pred"] = model.predict(df[NUMERIC + CATEGORICAL]).clip(5.0, 80.0)
+    raw = model.predict(df[NUMERIC + CATEGORICAL])
+    if target == "pace":
+        raw = 60.0 / np.clip(raw, 60.0 / 80.0, 60.0 / 5.0)
+    df["pred"] = raw.clip(5.0, 80.0)
 
     rows = []
     for c in CORRIDORS:

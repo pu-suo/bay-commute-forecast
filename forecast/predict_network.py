@@ -94,7 +94,10 @@ def main(argv=None):
     # would renumber them.
     import json
     meta_path = os.path.join(os.path.dirname(os.path.expanduser(a.model)), "metrics.json")
-    cats = json.load(open(meta_path))["categories"]
+    sidecar = json.load(open(meta_path))
+    cats = sidecar["categories"]
+    # Models fitted before the pace option have no "target" key and are mph.
+    target = sidecar.get("target", "speed")
     for c in CATEGORICAL:
         vals = df[c].astype(str)
         unknown = ~vals.isin(cats[c])
@@ -108,7 +111,10 @@ def main(argv=None):
         df[c] = pd.Categorical(vals.where(~unknown), categories=cats[c])
 
     feats = NUMERIC + CATEGORICAL
-    df["mph"] = model.predict(df[feats]).astype(np.float32)
+    raw = model.predict(df[feats])
+    # A pace model answers in min/mile; the whole pipeline downstream speaks mph.
+    df["mph"] = (60.0 / np.clip(raw, 60.0 / 80.0, 60.0 / 5.0)
+                 if target == "pace" else raw).astype(np.float32)
     # A tree can extrapolate outside anything physical when features combine in
     # ways the training data never showed; clamp rather than publish 3 mph or
     # 120 mph on a freeway.
