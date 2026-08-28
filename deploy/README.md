@@ -28,6 +28,12 @@ cd ..
 fly deploy --config deploy/fly.toml --dockerfile deploy/Dockerfile
 ```
 
+The machine stops when idle and starts on the first request, so it costs a few
+dollars a month rather than about twelve. The landing page never touches it, so
+the wake is only paid by someone clicking "Forecast this drive" on a cold app.
+To keep it always warm instead, set `min_machines_running = 1` and
+`auto_stop_machines = false`.
+
 The first deploy takes 15-20 minutes because it downloads a Geofabrik extract
 and prepares the OSRM graph. Later ones reuse that layer.
 

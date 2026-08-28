@@ -1,14 +1,21 @@
 # Fly config for the API. The static site is on Pages; this serves /api/* only.
 #
-# The machine is not stopped when idle: OSRM memory-maps an 880 MB graph, so a
-# cold start is slow enough that a visitor would notice, and the API is the
-# interactive half of the site.
+# The machine stops when idle. Nothing on the landing page touches this service:
+# the map, the week ahead and the accuracy page are static files, and the page
+# probes /api/health after rendering rather than before. So a cold start is only
+# ever paid by someone who clicks "Forecast this drive" on an idle app, and it
+# costs a few seconds rather than a blank screen.
+#
+# Measured in the container: osrm-routed ready in 1s, API up immediately after.
+# Fly's VM start adds about a second on top.
 
 app = "bay-commute-forecast"
 primary_region = "sjc"
 
 [build]
-  dockerfile = "Dockerfile"
+  # Relative to the build context, which is the repo root: the image copies
+  # forecast/ and site/, so deploying from inside deploy/ cannot work.
+  dockerfile = "deploy/Dockerfile"
 
 [env]
   SERVE_DIR = "/data/serve"
@@ -24,9 +31,9 @@ primary_region = "sjc"
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   [[http_service.checks]]
     interval = "30s"
