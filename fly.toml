@@ -13,8 +13,10 @@ app = "bay-commute-forecast"
 primary_region = "sjc"
 
 [build]
-  # Relative to the build context, which is the repo root: the image copies
-  # forecast/ and site/, so deploying from inside deploy/ cannot work.
+  # This file lives at the repo root on purpose. flyctl resolves the dockerfile
+  # path relative to the config file, and the build context is the config file's
+  # directory, so a fly.toml inside deploy/ makes the two irreconcilable: the
+  # image has to COPY forecast/ and site/, which are at the root.
   dockerfile = "deploy/Dockerfile"
 
 [env]

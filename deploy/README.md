@@ -18,15 +18,17 @@ unset and Photon answers.
 brew install flyctl
 fly auth signup                 # or: fly auth login
 
-cd deploy
 fly launch --no-deploy --copy-config --name bay-commute-forecast
-
-# Deploy from the REPO ROOT, not from deploy/. The Dockerfile copies forecast/
-# and site/, which live at the root, so the build context has to be the root.
-# Running `fly deploy` inside deploy/ fails on COPY forecast/.
-cd ..
-fly deploy --config deploy/fly.toml --dockerfile deploy/Dockerfile
+fly deploy
 ```
+
+Both from the repo root. `fly.toml` lives there rather than in `deploy/` because
+flyctl resolves the dockerfile path against the config file and uses that same
+directory as the build context, and the image has to copy `forecast/` and
+`site/`, which are at the root.
+
+Note that `fly launch` rewrites `fly.toml`, including settings you did not
+change. Check `git diff fly.toml` afterwards.
 
 The machine stops when idle and starts on the first request, so it costs a few
 dollars a month rather than about twelve. The landing page never touches it, so
