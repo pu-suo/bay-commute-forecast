@@ -458,6 +458,52 @@ function syncPlanToMap() {
   $('time').value = iso.slice(11, 16);
 }
 
+// ---- events on this drive ---------------------------------------------------
+// These constants are the model's, not the page's: features_stations.attach_events
+// attaches a venue to a detector within 12 miles, and counts an event live from
+// 4 hours before the doors to 6 hours after. Saying anything wider would claim
+// the forecast accounts for something it does not. If those numbers move in the
+// trainer, move them here too.
+const EVENT_MILES = 12, EVENT_BEFORE_H = 4, EVENT_AFTER_H = 6;
+
+function milesApart(lat1, lon1, lat2, lon2) {
+  // equirectangular, same approximation the feature builder uses
+  const dy = (lat1 - lat2) * 69.0;
+  const dx = (lon1 - lon2) * 69.0 * Math.cos(lat1 * Math.PI / 180);
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function eventsOnDrive(data, departMs, arriveMs) {
+  const evs = (state.cor && state.cor.events) || [];
+  const pts = data.segments.filter(s => s.lat);
+  if (!pts.length || !evs.length) return [];
+  return evs.map(e => {
+    const start = parseLocal(e.ts);
+    if (!Number.isFinite(start) || e.lat == null) return null;
+    if (arriveMs < start - EVENT_BEFORE_H * 3.6e6) return null;
+    if (departMs > start + EVENT_AFTER_H * 3.6e6) return null;
+    let near = Infinity;
+    for (const p of pts) {
+      near = Math.min(near, milesApart(p.lat, p.lon, e.lat, e.lon));
+      if (near <= EVENT_MILES) break;
+    }
+    return near <= EVENT_MILES ? { ...e, start, near } : null;
+  }).filter(Boolean).sort((a, b) => a.near - b.near).slice(0, 2);
+}
+
+function renderDriveEvents(data, departMs, arriveMs) {
+  const hits = eventsOnDrive(data, departMs, arriveMs);
+  const box = $('evnote');
+  if (!hits.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.innerHTML = hits.map(e => {
+    const t = new Date(e.start);
+    const when = `${t.toLocaleDateString([], { weekday: 'short' })} ${fmtHM(t)}`;
+    return `<b>${e.title}</b> at ${e.venue}, ${when} — ${e.capacity.toLocaleString()} seats,
+            ${e.near.toFixed(0)} mi from this route. The forecast already accounts for it.`;
+  }).join('<br>');
+  box.hidden = false;
+}
+
 function showRoute(data) {
   const s = data.summary;
   $('answer').classList.add('on');
@@ -476,6 +522,7 @@ function showRoute(data) {
   const departAt = state.mode === 'arrive' && data.arrive_by
     ? data.arrive_by.depart : s.depart;
   const mapNote = syncMapToDrive(departAt);
+  renderDriveEvents(data, parseLocal(departAt), parseLocal(s.arrive));
   $('caveat').innerHTML = `<b>${Math.round(s.measured_share * 100)}% of this journey is a measured forecast.</b>
     The rest is surface street, inferred by spreading nearby freeway conditions onto local roads,
     the thin lines on the map. That part has no ground truth and is excluded from the published accuracy.`
