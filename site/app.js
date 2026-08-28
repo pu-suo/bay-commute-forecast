@@ -301,9 +301,23 @@ function attachSearch(which) {
   input.addEventListener('blur', () => setTimeout(close, 120));
 }
 
+// Long enough to cover a container waking from idle, short enough that a
+// genuinely absent service is reported rather than spun on forever.
+const PROBE_TIMEOUT_MS = 12000;
+
 async function probeApi() {
   try {
-    await getJSON(api('/api/health'));
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), PROBE_TIMEOUT_MS);
+    try {
+      const res = await fetch(api('/api/health'), { signal: ctl.signal });
+      if (!(res.headers.get('content-type') || '').includes('application/json')) {
+        throw new Error('not the forecast service');
+      }
+      await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
     apiUp = true;
   } catch (err) {
     apiUp = false;
@@ -472,13 +486,15 @@ function drawProfile(rows) {
 // ---- boot -------------------------------------------------------------------
 (async function () {
   drawLegend();
-  API = await fetch('config.json').then(r => r.json()).then(c => c.api_base || '')
-                                  .catch(() => '');
-  const [net, cor, geo] = await Promise.all([
+  // All four in parallel. config.json used to be awaited first, which cost a
+  // whole round trip before the data even started.
+  const [cfg, net, cor, geo] = await Promise.all([
+    fetch('config.json').then(r => r.json()).catch(() => ({})),
     fetch('data/network.json').then(r => r.json()),
     fetch('data/corridors.json').then(r => r.json()),
     fetch('data/geometry.json').then(r => r.json()),
   ]);
+  API = cfg.api_base || '';
   Object.assign(state, { net, cor, geo });
 
   $('day').value = net.slots[0].slice(0, 10);
@@ -498,9 +514,12 @@ function drawProfile(rows) {
 
   ['from', 'to'].forEach(attachSearch);
   restoreFolds();
-  await probeApi();
   drawNetwork();
   renderWeek(cor.corridors[0].slug);
   renderFreshness();
   renderEvents();
+  // Deliberately not awaited. The map is the page; it must not wait on a
+  // service it does not need. A sleeping container can take seconds to wake,
+  // and blocking here turned that into a blank screen.
+  probeApi();
 })();
